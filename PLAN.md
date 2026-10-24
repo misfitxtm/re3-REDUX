@@ -9,7 +9,7 @@ Rust rewrite of re3 (GTA III, `re3-REDUX/re3-master`) and reVC (Vice City, branc
 - Binaries (gta3.exe / gta-vc.exe) are checked later with REA to find missing functions.
 
 ## Releases
-One `main` branch, three releases from it: tags `gta3-vX.Y.Z`, `vc-vX.Y.Z`, `sa-vX.Y.Z`, each a GitHub Release with that game's binaries (built by `--features` / game flag in the phase 8 binary crates). C++ reference lives outside the repo in ~/Projects/re3-cpp-reference.
+One `main` branch, three releases from it, named Re3 (GTA III), re3 Miami (Vice City) and Re3 LA (San Andreas): tags `re3-vX.Y.Z`, `re3-miami-vX.Y.Z`, `re3-la-vX.Y.Z`, each a GitHub Release with that game's binaries (built by `--features` / game flag in the phase 8 binary crates). C++ reference lives outside the repo in ~/Projects/re3-cpp-reference.
 
 ## Phases
 0. Workspace + golden tests against the C++ build

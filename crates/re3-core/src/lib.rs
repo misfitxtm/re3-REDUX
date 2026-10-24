@@ -5,3 +5,4 @@ pub mod collision;
 pub mod temp_col;
 pub mod anim;
 pub mod modelinfo;
+pub mod pool;

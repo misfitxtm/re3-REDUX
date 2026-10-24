@@ -40,7 +40,7 @@ pub struct Limits {
 impl Limits {
     pub fn for_game(game: Game) -> Self {
         match game {
-            Game::Gta3 => Self { models: 5500, txd_slots: 850, simple: 5000, time: 30, clump: 5, ped: 90, vehicle: 120, weapon: 0 },
+            Game::Gta3 => Self { models: 5500, txd_slots: 1024, simple: 5000, time: 30, clump: 5, ped: 90, vehicle: 120, weapon: 0 },
             Game::Vc => Self { models: 6500, txd_slots: 1385, simple: 3885, time: 385, clump: 5, ped: 130, vehicle: 110, weapon: 37 },
         }
     }
