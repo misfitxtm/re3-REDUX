@@ -62,6 +62,14 @@ fn every_ide_loads_into_the_registry() {
             assert_eq!(found.as_deref(), Some(name), "{var}: hardcoded id {id}");
         }
 
+        // every object.dat row finds its model (a miss would be skipped, shrinking the table)
+        let rows = re3_formats::world::parse_object_dat(&text(root, "data/object.dat"));
+        let mut table = re3_core::entity::object::ObjectTable::new(game);
+        table.load(&rows, &mut store);
+        let linked = (0..store.limits.models as i32).filter(|&i| store.get(i).is_some_and(|m| m.object_id >= 0)).count();
+        println!("{var}: {} object.dat rows, {linked} models linked", rows.len());
+        assert!(linked > 0 && linked <= rows.len());
+
         // time models come in day/night pairs
         let (mut time, mut paired) = (0, 0);
         for id in 0..store.limits.models as i32 {

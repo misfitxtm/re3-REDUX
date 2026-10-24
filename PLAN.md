@@ -37,9 +37,15 @@ One `main` branch, three releases from it, named Re3 (GTA III), re3 Miami (Vice 
 - `modelinfo`: registry, TXD slots, LOD/time-model logic, IDE loader, model-index tables and predicates (generated: tools/gen_model_indices.py, gen_name_tables.py). Every real IDE loads within the original table limits
 - `re3-formats::ifp`: animation file parser (183 real files)
 
-## Phase 4 (in progress): entities, pools, vehicles, weapons
+## Phase 4 (done, GTA III): entities, pools, vehicles, weapons
 - done: `pool` (generation handles), `general` (RNG), `timer`, `entity` (Entity + flag packing, Physical state, force maths, process_control)
-- next: `world.rs` (sector grid, add/remove, line-of-sight and area queries), `object.rs`, rest of Physical (collision response), vehicles, weapons. Ordered details in the vault HANDOFF.md
+- done (2026-10-24): `world` (pools, sector grid, add/remove/remove_and_add, line-of-sight, vertical line, ground Z, sphere/range/cube queries; `entity/ent.rs` holds the `Ent` record)
+- done: `entity/object.rs` (object.dat table, damage events, create/sweep helpers), `entity/collide.rs` (collision response + friction, GTA III)
+- done: `vehicle/` (handling, transmission, damage, door, floater, base = CVehicle) and `world/physics.rs` (ProcessShift/ProcessCollision and sector processors)
+- done: Automobile, Boat, Heli, Plane, Train, Cranes, CarGen (`vehicle/*`, `world/{cars,boats,helis,planes,trains,cranes,cargens}.rs`)
+- done: `weapons/` (weapon.dat table, CWeapon ammo/clip/state and Fire dispatch, ShotInfo, BulletInfo, ProjectileInfo, Explosion); the shots themselves (instant hit, shotgun, sniper, melee, aiming) need peds, camera and pad, so they sit behind `FireEnv`/`BulletEnv` for phase 5
+- done: `world/process.rs` (CWorld::Process loop, TriggerExplosion, object ProcessControl, fire/extinguish/clear/fallen/reposition/restart helpers); ped, path and population parts are `WorldHooks`
+- deferred: Bike and every Vice City variant of the physics/vehicle code; renderer-only parts (PreRender/Render, dust, coronas, shadows -> phase 7); save/load; call-off-chase, angled-box and mission-entity queries (need peds/autopilot missions)
 
 ## Left for later phases
 - phase 4+: entities, pools, vehicles, weapons, peds, script VM, saves, audio, renderer (see top)

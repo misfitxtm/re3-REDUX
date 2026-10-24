@@ -14,7 +14,8 @@ pub struct CarHandling {
     pub traction_bias: f32,
     pub gears: i32,
     pub max_velocity: f32,
-    pub engine_acceleration: f32,
+    /// Kept as a double: the original multiplies the parsed double by 0.4 before narrowing.
+    pub engine_acceleration: f64,
     pub drive_type: char,
     pub engine_type: char,
     pub brake_deceleration: f32,

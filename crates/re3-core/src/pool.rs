@@ -91,6 +91,18 @@ impl<T> Pool<T> {
         (i < self.size() && self.flags[i] == (handle & 0xFF) as u8).then_some(i)
     }
 
+    /// Lends the entry out without freeing its slot; give it back with [`Pool::restore`].
+    pub fn take(&mut self, handle: i32) -> Option<T> {
+        let i = self.index_of(handle)?;
+        self.entries[i].take()
+    }
+
+    pub fn restore(&mut self, handle: i32, value: T) {
+        if let Some(i) = self.index_of(handle) {
+            self.entries[i] = Some(value);
+        }
+    }
+
     /// `GetAt(handle)`.
     pub fn get(&self, handle: i32) -> Option<&T> {
         self.entries[self.index_of(handle)?].as_ref()

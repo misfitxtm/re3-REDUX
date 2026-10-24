@@ -4,7 +4,12 @@ use crate::general::Rng;
 use crate::math::{Matrix, Rect};
 use glam::{Vec2, Vec3};
 
+pub mod collide;
+pub mod ent;
+pub mod object;
 pub mod physical;
+
+pub use ent::{Ent, EntryInfo, Kind, ObjectData, PedState, TreadableData};
 
 /// Which pool a handle belongs to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

@@ -7,13 +7,6 @@ use glam::Vec3;
 pub const MAX_COLLISION_RECORDS: usize = 6;
 pub const GRAVITY: f32 = 0.008;
 
-/// Where a physical entity sits in a sector list (`CEntryInfoNode`): sector and list index.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct EntryInfo {
-    pub sector: (usize, usize),
-    pub list: usize,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PhysFlags {
     pub is_heavy: bool,
@@ -52,7 +45,6 @@ pub struct Physical {
     pub elasticity: f32,
     pub buoyancy: f32,
     pub centre_of_mass: Vec3,
-    pub entry_info: Vec<EntryInfo>,
     pub in_moving_list: bool,
     pub static_frames: u8,
     pub collision_records: Vec<EntityRef>,
@@ -87,7 +79,6 @@ impl Default for Physical {
             elasticity: 0.0,
             buoyancy: 0.0,
             centre_of_mass: Vec3::ZERO,
-            entry_info: vec![],
             in_moving_list: false,
             static_frames: 0,
             collision_records: vec![],

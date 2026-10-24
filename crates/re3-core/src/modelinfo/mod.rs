@@ -148,6 +148,13 @@ pub struct VehicleData {
     pub colours2: [u8; NUM_VEHICLE_COLOURS],
     pub num_colours: u8,
     pub anim_file: Option<String>,
+    /// Wheel centres (front left, rear left, front right, rear right) from the clump's frames.
+    /// Filled when the model is loaded; the registry itself does not read clumps.
+    pub wheel_positions: [Vec3; 4],
+    /// Local position of each car node (`eCarNodes`, index 0 unused) that the clump has.
+    pub node_positions: [Option<Vec3>; 19],
+    /// `m_lastColorVariation`.
+    pub last_colour_variation: i32,
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -509,6 +516,9 @@ impl ModelInfoStore {
             colours2: [0; NUM_VEHICLE_COLOURS],
             num_colours: 0,
             anim_file: None,
+            wheel_positions: [Vec3::ZERO; 4],
+            node_positions: [None; 19],
+            last_colour_variation: 0,
         };
         self.add(id, VEHICLE, cap, "vehicle models", Kind::Vehicle(Box::new(v)))
     }
@@ -759,3 +769,160 @@ fn fill_simple(s: &mut SimpleData, o: &Obj, game: Game) {
 
 #[cfg(test)]
 mod tests;
+
+/// The model ids the game looks up by name (`MI_*` that are not fixed): one table per game.
+#[derive(Debug, Clone)]
+pub enum Indices {
+    Gta3(indices_gta3::ModelIndices),
+    Vc(indices_vc::ModelIndices),
+}
+
+impl Indices {
+    pub fn new(game: Game) -> Self {
+        match game {
+            Game::Gta3 => Self::Gta3(Default::default()),
+            Game::Vc => Self::Vc(Default::default()),
+        }
+    }
+
+    /// Called for every model the IDE loader defines.
+    pub fn match_model_string(&mut self, name: &str, id: i16) -> bool {
+        match self {
+            Self::Gta3(i) => i.match_model_string(name, id),
+            Self::Vc(i) => i.match_model_string(name, id),
+        }
+    }
+
+    /// Vice City reads the glass flags of the model, GTA III compares names.
+    pub fn is_glass(&self, models: &ModelInfoStore, id: i16) -> bool {
+        match self {
+            Self::Gta3(i) => i.is_glass(id),
+            Self::Vc(_) => models.get(id as i32).is_some_and(|m| m.is_building() && m.simple().is_some_and(|s| s.flags.is_code_glass || s.flags.is_artist_glass)),
+        }
+    }
+
+    pub fn is_explosive_thing(&self, id: i16) -> bool {
+        match self {
+            Self::Gta3(i) => i.is_explosive_thing_model(id),
+            Self::Vc(i) => i.is_explosive_thing_model(id),
+        }
+    }
+
+    /// GTA III's list of dummies `RepositionOneObject` lowers onto the ground; Vice City's isn't ported.
+    pub fn is_ground_repositioned(&self, id: i16) -> bool {
+        match self {
+            Self::Gta3(i) => i.is_ground_repositioned(id),
+            Self::Vc(_) => false,
+        }
+    }
+
+    pub fn is_fence(&self, id: i16) -> bool {
+        match self {
+            Self::Gta3(i) => i.is_fence(id),
+            Self::Vc(i) => i.is_fence(id),
+        }
+    }
+
+    pub fn exploding_barrel(&self) -> i16 {
+        match self {
+            Self::Gta3(i) => i.get(indices_gta3::slot::EXPLODINGBARREL),
+            Self::Vc(i) => i.get(indices_vc::slot::EXPLODINGBARREL),
+        }
+    }
+
+    pub fn fire_hydrant(&self) -> i16 {
+        match self {
+            Self::Gta3(i) => i.get(indices_gta3::slot::FIRE_HYDRANT),
+            Self::Vc(i) => i.get(indices_vc::slot::FIRE_HYDRANT),
+        }
+    }
+
+    pub fn buoy(&self) -> i16 {
+        match self {
+            Self::Gta3(i) => i.get(indices_gta3::slot::BUOY),
+            Self::Vc(i) => i.get(indices_vc::slot::BUOY),
+        }
+    }
+
+    /// GTA III only; -1 in Vice City.
+    pub fn body_cast(&self) -> i16 {
+        match self {
+            Self::Gta3(i) => i.get(indices_gta3::slot::BODYCAST),
+            Self::Vc(_) => -1,
+        }
+    }
+
+    // GTA III semantics; Vice City answers with its own tables where they exist.
+    pub fn is_street_light(&self, id: i16) -> bool {
+        match self {
+            Self::Gta3(i) => i.is_street_light(id),
+            Self::Vc(i) => i.is_light_object(id),
+        }
+    }
+
+    pub fn is_body_part(&self, id: i16) -> bool {
+        match self {
+            Self::Gta3(i) => i.is_body_part(id),
+            Self::Vc(i) => i.is_body_part(id),
+        }
+    }
+
+    pub fn is_boat_model(&self, id: i16) -> bool {
+        match self {
+            Self::Gta3(i) => i.is_boat_model(id),
+            Self::Vc(_) => false,
+        }
+    }
+
+    pub fn car_bumper(&self) -> i16 {
+        match self {
+            Self::Gta3(_) => indices_gta3::mi::CAR_BUMPER,
+            Self::Vc(_) => indices_vc::mi::CAR_BUMPER,
+        }
+    }
+
+    /// `MI_FILES` (GTA III only).
+    pub fn files(&self) -> i16 {
+        match self {
+            Self::Gta3(i) => i.get(indices_gta3::slot::FILES),
+            Self::Vc(_) => -1,
+        }
+    }
+
+    pub fn rc_bandit(&self) -> i16 {
+        match self {
+            Self::Gta3(_) => indices_gta3::mi::RCBANDIT,
+            Self::Vc(_) => indices_vc::mi::RCBANDIT,
+        }
+    }
+
+    pub fn train(&self) -> i16 {
+        match self {
+            Self::Gta3(_) => indices_gta3::mi::TRAIN,
+            Self::Vc(_) => indices_vc::mi::TRAIN,
+        }
+    }
+
+    pub fn dodo(&self) -> i16 {
+        match self {
+            Self::Gta3(_) => indices_gta3::mi::DODO,
+            Self::Vc(_) => indices_vc::mi::DODO,
+        }
+    }
+
+    /// The three crane models (GTA III): cab and the two tops.
+    pub fn crane_models(&self) -> [i16; 3] {
+        match self {
+            Self::Gta3(i) => [i.get(indices_gta3::slot::MODELID_CRANE_1), i.get(indices_gta3::slot::MODELID_CRANE_2), i.get(indices_gta3::slot::MODELID_CRANE_3)],
+            Self::Vc(_) => [-1; 3],
+        }
+    }
+
+    /// `MI_MAGNET` (the crane hook).
+    pub fn magnet(&self) -> i16 {
+        match self {
+            Self::Gta3(i) => i.get(indices_gta3::slot::MAGNET),
+            Self::Vc(_) => -1,
+        }
+    }
+}

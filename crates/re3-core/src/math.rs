@@ -6,6 +6,31 @@ pub const PI: f32 = std::f32::consts::PI;
 pub const TWO_PI: f32 = std::f32::consts::TAU;
 
 /// `CVector::Normalise`: a zero vector becomes (1, 0, 0).
+/// `CGeneral::GetATanOfXY`: the angle of (x, y) counter-clockwise from +x, in 0..2pi, built from
+/// `atan2(t, 1)` pieces like the original.
+pub fn atan_of_xy(x: f32, y: f32) -> f32 {
+    use std::f32::consts::PI;
+    if x == 0.0 && y == 0.0 {
+        return 0.0;
+    }
+    let (xabs, yabs) = (x.abs(), y.abs());
+    if xabs < yabs {
+        if y > 0.0 {
+            if x > 0.0 { 0.5 * PI - (x / y).atan2(1.0) } else { 0.5 * PI + (-x / y).atan2(1.0) }
+        } else if x > 0.0 {
+            1.5 * PI + (x / -y).atan2(1.0)
+        } else {
+            1.5 * PI - (-x / -y).atan2(1.0)
+        }
+    } else if y > 0.0 {
+        if x > 0.0 { (y / x).atan2(1.0) } else { PI - (y / -x).atan2(1.0) }
+    } else if x > 0.0 {
+        2.0 * PI - (-y / x).atan2(1.0)
+    } else {
+        PI + (-y / -x).atan2(1.0)
+    }
+}
+
 pub fn normalise(v: Vec3) -> Vec3 {
     let sq = magnitude_squared(v);
     if sq > 0.0 {

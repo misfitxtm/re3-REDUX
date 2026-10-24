@@ -591,4 +591,14 @@ impl ModelIndices {
         id == self.get(slot::FENCE) || id == self.get(slot::FENCE2)
     }
 
+
+    /// The models `CWorld::RepositionOneObject` drops onto the ground.
+    pub fn is_ground_repositioned(&self, id: i16) -> bool {
+        use slot::*;
+        self.is_street_light(id)
+            || self.is_tree_model(id)
+            || [PARKINGMETER, PHONEBOOTH1, WASTEBIN, BIN, POSTBOX1, NEWSSTAND, TRAFFICCONE, DUMP1, ROADWORKBARRIER1, BUSSIGN1, NOPARKINGSIGN1, PHONESIGN, TAXISIGN, FISHSTALL01, FISHSTALL02, FISHSTALL03, FISHSTALL04, BAGELSTAND2, FIRE_HYDRANT, BOLLARDLIGHT, PARKTABLE]
+                .iter()
+                .any(|&s| id == self.get(s))
+    }
 }

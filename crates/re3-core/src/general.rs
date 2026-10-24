@@ -73,6 +73,21 @@ impl Rng {
     }
 }
 
+/// `CGeneral::GetRadianAngleBetweenPoints`.
+pub fn radian_angle_between_points(x1: f32, y1: f32, x2: f32, y2: f32) -> f32 {
+    let x = x2 - x1;
+    let mut y = y2 - y1;
+    if y == 0.0 {
+        y = 0.0001;
+    }
+    let a = (x / y).atan2(1.0);
+    match (x > 0.0, y > 0.0) {
+        (true, true) => std::f32::consts::PI - a,
+        (false, true) => -(std::f32::consts::PI + a),
+        _ => -a,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
