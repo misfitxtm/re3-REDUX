@@ -37,6 +37,10 @@ One `main` branch, three releases from it, named Re3 (GTA III), re3 Miami (Vice 
 - `modelinfo`: registry, TXD slots, LOD/time-model logic, IDE loader, model-index tables and predicates (generated: tools/gen_model_indices.py, gen_name_tables.py). Every real IDE loads within the original table limits
 - `re3-formats::ifp`: animation file parser (183 real files)
 
+## Phase 4 (in progress): entities, pools, vehicles, weapons
+- done: `pool` (generation handles), `general` (RNG), `timer`, `entity` (Entity + flag packing, Physical state, force maths, process_control)
+- next: `world.rs` (sector grid, add/remove, line-of-sight and area queries), `object.rs`, rest of Physical (collision response), vehicles, weapons. Ordered details in the vault HANDOFF.md
+
 ## Left for later phases
 - phase 4+: entities, pools, vehicles, weapons, peds, script VM, saves, audio, renderer (see top)
 - raster pixel decoding (DXT etc.) -> phase 7

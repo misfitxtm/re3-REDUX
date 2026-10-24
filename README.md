@@ -1,13 +1,11 @@
-<p align="center">
-  <img src="docs/images/re3-redux-logo.svg" width="128" alt="The Re3 Redux logo: the letters RE3 over three coloured bars (grey, pink to cyan, orange) and the word REDUX">
-</p>
-
 <h1 align="center">Re3 Redux</h1>
 
 <p align="center">A Rust rewrite of Re3, re3 Miami and Re3 LA.</p>
 
 <p align="center">
-  <img src="docs/images/banner.png" width="800" alt="Three panels: RE3 in grey on concrete, RE3 MIAMI in pink and cyan neon over a striped sun, RE3 LA in orange over a sunset with palm trees">
+  <img src="docs/images/re3.svg" width="260" alt="The Re3 logo: white block letters RE3 on a slanted teal sign with a heavy black frame">
+  <img src="docs/images/re3-miami.svg" width="260" alt="The re3 Miami logo: RE3 in glowing cyan and magenta neon tubes above a pink MIAMI plate">
+  <img src="docs/images/re3-la.svg" width="260" alt="The Re3 LA logo: yellow RE3 on a black sign in front of an orange sunset, with LOS ANGELES underneath">
 </p>
 
 One engine, one `main` branch, three releases: **Re3**, **re3 Miami** and **Re3 LA**. Each release ships its own build, tagged `re3-v…`, `re3-miami-v…` and `re3-la-v…`. The goal is a fully working, moddable, cross-platform (Linux and Windows) version of the original PC games that can be enjoyed for years to come.
@@ -58,7 +56,7 @@ Tests that read real game files are skipped unless you point them at your instal
 GTA3_DIR="/path/to/Grand Theft Auto 3" VC_DIR="/path/to/Grand Theft Auto Vice City" cargo test --workspace
 ```
 
-Some Rust source files are generated from the original C++ tables (animation groups, model indices, name lists). The generators, and the script that draws the logo and banner, are in `tools/`.
+Some Rust source files are generated from the original C++ tables (animation groups, model indices, name lists). The generators are in `tools/`.
 
 ## Contributing
 
@@ -67,8 +65,6 @@ Issues and pull requests go through GitHub.
 ## Credits
 
 This project stands on the work of the re3 and reVC team: aap (the original author), Fire_Head, shfil, erorcun, Nick007J and Serge, and everyone who contributed to [re3](https://github.com/GTAmodding/re3) and [librw](https://github.com/aap/librw). re3 started in spring 2018 as a way to test reversed collision and physics code inside the game, became a standalone executable in April 2020, and reVC followed in 2020. re3 was later removed from GitHub; this project builds on what it left behind.
-
-The logo and banner lettering uses [Bebas Neue](https://github.com/dharmatype/Bebas-Neue) (SIL Open Font License).
 
 ## Disclaimer
 

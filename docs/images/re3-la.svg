@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 400" width="500" height="400">
+  <!-- sunset arc behind a black sign plate -->
+  <circle cx="250" cy="150" r="140" fill="#ff8a3d"/>
+  <circle cx="250" cy="150" r="104" fill="#ffc857"/>
+  <!-- black sign plate with yellow condensed letters -->
+  <rect x="96" y="96" width="308" height="150" rx="10" fill="#111" stroke="#000" stroke-width="6"/>
+  <rect x="110" y="110" width="280" height="122" rx="4" fill="none" stroke="#ffb020" stroke-width="3" stroke-dasharray="14 8"/>
+  <text x="250" y="206" text-anchor="middle" font-family="'Arial Narrow', Impact, sans-serif" font-weight="700" font-size="150" fill="#ffb020" letter-spacing="2">RE3</text>
+  <!-- tracked caption on a palm-dark strip -->
+  <rect x="120" y="272" width="260" height="36" fill="#2b1d4a"/>
+  <text x="250" y="297" text-anchor="middle" font-family="'Arial Narrow', Arial, sans-serif" font-weight="700" font-size="22" fill="#ffe3a3" letter-spacing="7">LOS ANGELES</text>
+  <!-- low hills -->
+  <path d="M40 350 Q140 320 230 344 T460 336 L460 380 L40 380 Z" fill="#3d1a1c"/>
+</svg>

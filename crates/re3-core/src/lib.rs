@@ -6,3 +6,6 @@ pub mod temp_col;
 pub mod anim;
 pub mod modelinfo;
 pub mod pool;
+pub mod general;
+pub mod timer;
+pub mod entity;
