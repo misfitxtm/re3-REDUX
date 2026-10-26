@@ -1212,3 +1212,98 @@ impl World {
         self.flush_after_car(env, &mut Rng::default());
     }
 }
+
+impl World {
+    /// `CAutomobile::RemoveBonnetInPedCollision`: the bonnet flies off as an object, which is returned.
+    pub fn remove_bonnet_in_ped_collision(&mut self, r: EntityRef, rng: &mut Rng) -> Option<EntityRef> {
+        let mut e = self.ents.pools.take(r)?;
+        let mut events = vec![];
+        let removed = Parts::of(r, &mut e).map(|mut p| {
+            let removed = p.remove_bonnet_in_ped_collision(&mut events);
+            p.finish();
+            removed
+        });
+        self.ents.pools.restore(r, e);
+        if removed != Some(true) {
+            return None;
+        }
+        events.into_iter().find_map(|ev| match ev {
+            CarEvent::FlyingComponent { car, component, group } => self.spawn_flying_component(car, component, group, rng),
+            _ => None,
+        })
+    }
+
+    /// `CAutomobile::ProcessOpenDoor`: swings the door `component` of a car as far as the ped's
+    /// enter or exit animation `anim` has come at `time`.
+    pub fn process_open_door(&mut self, r: EntityRef, component: usize, anim: u32, time: f32) {
+        use crate::anim::tables_gta3::anim as a;
+        use crate::vehicle::automobile::door_id;
+        let door = match component {
+            node::DOOR_RF => door_id::FRONT_RIGHT,
+            node::DOOR_RR => door_id::REAR_RIGHT,
+            node::DOOR_LF => door_id::FRONT_LEFT,
+            node::DOOR_LR => door_id::REAR_LEFT,
+            _ => return,
+        };
+        let Some(mut e) = self.ents.pools.take(r) else { return };
+        let mut events = vec![];
+        if let Some(mut p) = Parts::of(r, &mut e) {
+            if !p.car.is_door_missing(door) {
+                // (start, end) of the door's travel inside the animation, as a share of its length
+                match anim {
+                    a::STD_QUICKJACK | a::STD_CAR_OPEN_DOOR_LHS | a::STD_CAR_OPEN_DOOR_RHS | a::STD_COACH_OPEN_LHS | a::STD_COACH_OPEN_RHS => {
+                        door_swing(&mut p, door, time, (0.66, 0.8), true, &mut events)
+                    }
+                    a::STD_CAR_CLOSE_DOOR_LHS | a::STD_CAR_CLOSE_DOOR_LO_LHS | a::STD_CAR_CLOSE_DOOR_RHS | a::STD_CAR_CLOSE_DOOR_LO_RHS => {
+                        door_swing(&mut p, door, time, (0.2, 0.63), false, &mut events)
+                    }
+                    a::STD_CAR_CLOSE_DOOR_ROLLING_LHS | a::STD_CAR_CLOSE_DOOR_ROLLING_LO_LHS => door_swing_open_close(&mut p, door, time, (0.1, 0.6, 0.95), &mut events),
+                    a::STD_GETOUT_LHS | a::STD_GETOUT_LO_LHS | a::STD_GETOUT_RHS | a::STD_GETOUT_LO_RHS => door_swing(&mut p, door, time, (0.06, 0.43), true, &mut events),
+                    a::STD_CAR_CLOSE_LHS | a::STD_CAR_CLOSE_RHS => door_swing(&mut p, door, time, (0.1, 0.23), false, &mut events),
+                    a::STD_CAR_PULL_OUT_PED_RHS | a::STD_CAR_PULL_OUT_PED_LO_RHS => p.open_door(door, 1.0, &mut events),
+                    a::STD_COACH_GET_OUT_LHS => door_swing(&mut p, door, time, (0.0, 0.3), true, &mut events),
+                    a::STD_VAN_OPEN_DOOR_REAR_LHS | a::STD_VAN_OPEN_DOOR_REAR_RHS => door_swing(&mut p, door, time, (0.37, 0.55), true, &mut events),
+                    a::STD_VAN_CLOSE_DOOR_REAR_LHS | a::STD_VAN_CLOSE_DOOR_REAR_RHS => door_swing(&mut p, door, time, (0.5, 0.8), false, &mut events),
+                    a::STD_VAN_GET_OUT_REAR_LHS | a::STD_VAN_GET_OUT_REAR_RHS => door_swing(&mut p, door, time, (0.5, 0.6), true, &mut events),
+                    a::STD_NUM => p.open_door(door, time, &mut events),
+                    _ => {}
+                }
+            }
+            p.finish();
+        }
+        self.ents.pools.restore(r, e);
+        self.ents.events.extend(events.into_iter().map(super::WorldEvent::Car));
+    }
+}
+
+/// `ProcessDoorOpenAnimation` and `ProcessDoorCloseAnimation`.
+fn door_swing(p: &mut Parts, door: usize, time: f32, (start, end): (f32, f32), opening: bool, events: &mut Vec<CarEvent>) {
+    let open_ratio = p.car.doors[door].angle_open_ratio();
+    if time > start && time < end {
+        let travelled = (time - start) / (end - start);
+        let ratio = if opening { travelled } else { 1.0 - travelled };
+        if (opening && open_ratio < ratio) || (!opening && open_ratio > ratio) {
+            p.open_door(door, ratio, events);
+        }
+    } else if time > end {
+        p.open_door(door, if opening { 1.0 } else { 0.0 }, events);
+    }
+}
+
+/// `ProcessDoorOpenCloseAnimation`: opens until `mid`, closes until `end`.
+fn door_swing_open_close(p: &mut Parts, door: usize, time: f32, (start, mid, end): (f32, f32, f32), events: &mut Vec<CarEvent>) {
+    let open_ratio = p.car.doors[door].angle_open_ratio();
+    if time > start && time < mid {
+        let ratio = (time - start) / (mid - start);
+        if open_ratio < ratio {
+            p.open_door(door, ratio, events);
+        }
+    } else if time > mid && time < end {
+        let ratio = 1.0 - (time - mid) / (end - mid);
+        if open_ratio > ratio {
+            p.open_door(door, ratio, events);
+        }
+    } else if time > end {
+        p.open_door(door, 0.0, events);
+    }
+}

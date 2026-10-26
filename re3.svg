@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 400" width="500" height="400">
+  <!-- slanted teal banner with a heavy black frame and white block letters -->
+  <g transform="skewX(-12) translate(60 0)">
+    <rect x="30" y="110" width="400" height="180" fill="#000" transform="translate(12 12)"/>
+    <rect x="30" y="110" width="400" height="180" fill="#1f5f72" stroke="#000" stroke-width="16"/>
+    <rect x="46" y="126" width="368" height="10" fill="#9fd8e6"/>
+    <rect x="46" y="264" width="368" height="10" fill="#9fd8e6"/>
+  </g>
+  <text x="250" y="262" text-anchor="middle" font-family="Impact, 'Arial Black', sans-serif" font-weight="900" font-size="170" fill="#000" transform="translate(10 10)">RE3</text>
+  <text x="250" y="262" text-anchor="middle" font-family="Impact, 'Arial Black', sans-serif" font-weight="900" font-size="170" fill="#fff" stroke="#000" stroke-width="8" paint-order="stroke">RE3</text>
+</svg>

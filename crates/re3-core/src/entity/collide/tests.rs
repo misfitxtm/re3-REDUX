@@ -1,6 +1,6 @@
 use super::*;
 use crate::entity::object::ObjectData;
-use crate::entity::{Entity, PedState, PoolKind};
+use crate::entity::{Entity, PoolKind};
 use crate::modelinfo::ModelInfoStore;
 use re3_formats::datafile::Game;
 
@@ -90,7 +90,7 @@ fn a_car_pushes_a_static_object_over_only_beyond_its_uproot_limit() {
 #[test]
 fn a_ped_walking_into_a_pole_is_pushed_back() {
     let mut f = Fixture::new();
-    let mut p = ent(EntityType::Ped, Kind::Ped(PedState::default()), Vec3::ZERO, 60.0, Vec3::new(0.1, 0.0, 0.0));
+    let mut p = ent(EntityType::Ped, Kind::Ped(Box::default()), Vec3::ZERO, 60.0, Vec3::new(0.1, 0.0, 0.0));
     p.base.flags.ped_physics = true;
     let mut o = ent(EntityType::Object, Kind::Object(ObjectData { uproot_limit: 1e9, ..ObjectData::new() }), Vec3::new(1.0, 0.0, 0.0), 50.0, Vec3::ZERO);
     o.base.flags.is_static = true;

@@ -9,7 +9,8 @@ pub mod ent;
 pub mod object;
 pub mod physical;
 
-pub use ent::{Ent, EntryInfo, Kind, ObjectData, PedState, TreadableData};
+pub use crate::ped::data::PedData;
+pub use ent::{Ent, EntryInfo, Kind, ObjectData, TreadableData};
 
 /// Which pool a handle belongs to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

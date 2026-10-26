@@ -88,6 +88,45 @@ pub fn radian_angle_between_points(x1: f32, y1: f32, x2: f32, y2: f32) -> f32 {
     }
 }
 
+/// `CGeneral::GetNodeHeadingFromVector`: the 0..7 path direction a vector points in.
+pub fn node_heading_from_vector(x: f32, y: f32) -> i32 {
+    use std::f32::consts::{PI, TAU};
+    let mut angle = radian_angle_between_points(x, y, 0.0, 0.0);
+    if angle < 0.0 {
+        angle += TAU;
+    }
+    angle = 22.5 * PI / 180.0 + TAU - angle;
+    if angle >= TAU {
+        angle -= TAU;
+    }
+    (angle / (45.0 * PI / 180.0)).floor() as i32
+}
+
+/// `CGeneral::LimitAngle`: degrees into -180..180.
+pub fn limit_angle(angle: f32) -> f32 {
+    let mut r = angle;
+    while r >= 180.0 {
+        r -= 2.0 * 180.0;
+    }
+    while r < -180.0 {
+        r += 2.0 * 180.0;
+    }
+    r
+}
+
+/// `CGeneral::LimitRadianAngle`: radians into -pi..pi (inputs are clamped to +-25 first).
+pub fn limit_radian_angle(angle: f32) -> f32 {
+    use std::f32::consts::PI;
+    let mut r = angle.clamp(-25.0, 25.0);
+    while r >= PI {
+        r -= 2.0 * PI;
+    }
+    while r < -PI {
+        r += 2.0 * PI;
+    }
+    r
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

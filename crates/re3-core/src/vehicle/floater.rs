@@ -75,6 +75,11 @@ impl Default for Buoyancy {
 }
 
 impl Buoyancy {
+    /// Water height found by the last [`Buoyancy::process`].
+    pub fn water_level(&self) -> f32 {
+        self.water_level
+    }
+
     /// Share of the body under water after the last [`Buoyancy::process`].
     pub fn volume_under_water(&self) -> f32 {
         self.volume_under_water

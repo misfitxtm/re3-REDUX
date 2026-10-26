@@ -47,6 +47,13 @@ One `main` branch, three releases from it, named Re3 (GTA III), re3 Miami (Vice 
 - done: `world/process.rs` (CWorld::Process loop, TriggerExplosion, object ProcessControl, fire/extinguish/clear/fallen/reposition/restart helpers); ped, path and population parts are `WorldHooks`
 - deferred: Bike and every Vice City variant of the physics/vehicle code; renderer-only parts (PreRender/Render, dust, coronas, shadows -> phase 7); save/load; call-off-chase, angled-box and mission-entity queries (need peds/autopilot missions)
 
+## Phase 5 (in progress): peds, control, save
+- done: `ped/{types,data,ik,clump,ctx}.rs` (ped.dat/pedstats.dat tables, gangs, full `PedData`, head/torso/arm IK, anim helpers), `control/pathfind.rs` (graph build from IDE paths + searches; the real GTA III graph fits the game's limits), generated `audio/sound_list.rs` (tools/gen_sounds.py)
+- done: `ped/core.rs` (Ped.cpp up to UpdatePosition: ped lists, threat scan, move anims, look/aim, velocity), `ped/states.rs` (SetIdle, ClearLook, SetWanderPath, Say, weapon model id), `ped/callbacks.rs` (animation callback tokens), `PedHooks` camera/pad methods, `PlayerData` walk fields; `ped/tests.rs`. Still stubbed: the weapon atomic and `is_sphere_visible` in the wander path env
+- done: all of Ped.cpp but Save/Load and the renderer bits (ProcessControl, buoyancy, hit response, foot steps, talking, `world/ped_collision.rs`, create/set model/destroy), PedAI.cpp, PedFight.cpp, PedRoutes, placement. `ped/pending.rs` still holds `is_ped_doing_drive_by_shooting`, `set_arrest_player` (CopPed) and `fire_weapon` (Weapon.cpp FireEnv)
+- done: Wanted, Fire, Accident, PlayerInfo (data), CopPed, CivilianPed, EmergencyPed, PlayerPed (state, anims, weapon select/lock-on, control, ProcessControl; free-cam arm aiming left out). Pad and camera reach the ped code as `PedHooks::pad()` / `camera()` snapshots
+- left: Population, PedChat remainder, Gangs; PlayerInfo methods (Process, kill/arrest); a dispatcher that picks `*_process_control` by `PedData.class` and drains ped `WorldEvent`s (StartFire, PedFall, KillPedWithCar, ExplosionHitPed, RemovePed); the shots in Weapon.cpp (FireEnv); control (CarCtrl, CarAI, Garages, Pickups, TrafficLights, script VM, ...); save (Ped/PlayerPed Save/Load)
+
 ## Left for later phases
 - phase 4+: entities, pools, vehicles, weapons, peds, script VM, saves, audio, renderer (see top)
 - raster pixel decoding (DXT etc.) -> phase 7

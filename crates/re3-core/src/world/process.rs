@@ -263,7 +263,7 @@ impl World {
             }
             EntityType::Ped => {
                 if let Kind::Ped(ped) = &mut e.kind {
-                    ped.is_standing = false;
+                    ped.flags.is_standing = false;
                 }
                 let p = e.phys.as_mut().expect("physical");
                 p.apply_move_force(Vec3::new(0.0, 0.0, 2.0));
@@ -305,12 +305,12 @@ impl World {
 
     // ---- area helpers ----
 
-    fn vehicle_refs(&self) -> Vec<EntityRef> {
+    pub(crate) fn vehicle_refs(&self) -> Vec<EntityRef> {
         let p = &self.ents.pools.vehicles;
         p.iter().map(|(i, _)| EntityRef { pool: PoolKind::Vehicle, handle: p.handle_of(i) }).collect()
     }
 
-    fn ped_refs(&self) -> Vec<EntityRef> {
+    pub(crate) fn ped_refs(&self) -> Vec<EntityRef> {
         let p = &self.ents.pools.peds;
         p.iter().map(|(i, _)| EntityRef { pool: PoolKind::Ped, handle: p.handle_of(i) }).collect()
     }
@@ -333,7 +333,7 @@ impl World {
             let Some(e) = self.get(r) else { continue };
             let Kind::Ped(ped) = &e.kind else { continue };
             let p = e.base.position();
-            if !ped.dead && !ped.in_vehicle && !e.base.flags.fire_proof && (p.z - pos.z).abs() < 5.0 && (p.x - pos.x).abs() < radius && (p.y - pos.y).abs() < radius {
+            if !ped.dead() && !ped.in_vehicle && !e.base.flags.fire_proof && (p.z - pos.z).abs() < 5.0 && (p.x - pos.x).abs() < radius && (p.y - pos.y).abs() < radius {
                 self.ents.events.push(WorldEvent::StartFire { target: r, culprit: reason });
             }
         }
@@ -398,7 +398,7 @@ impl World {
             let Some(e) = self.get(r) else { continue };
             let Kind::Ped(ped) = &e.kind else { continue };
             let p = e.base.position();
-            if !ped.is_player && can_be_deleted(self, r) && p.cmpge(min).all() && p.cmple(max).all() {
+            if !ped.is_player() && can_be_deleted(self, r) && p.cmpge(min).all() && p.cmple(max).all() {
                 hooks.remove_ped(self, r);
             }
         }

@@ -29,6 +29,7 @@ mod planes;
 mod trains;
 mod cranes;
 mod cargens;
+mod ped_collision;
 mod physics;
 mod process;
 #[cfg(test)]
@@ -273,6 +274,29 @@ pub struct Ents {
     pub pending_explosions: Vec<process::PendingExplosion>,
     /// `FindPlayerPed()`.
     pub player_ped: Option<EntityRef>,
+    pub ped_types: crate::ped::types::PedTypes,
+    pub ped_stats: crate::ped::types::PedStatTable,
+    pub fight_moves: Vec<crate::ped::data::FightMove>,
+    pub weapon_infos: crate::weapons::info::WeaponInfos,
+    pub gangs: crate::ped::types::Gangs,
+    pub anim: crate::anim::AnimManager,
+    pub paths: crate::control::pathfind::PathFind,
+    /// `CPed::ms_vec2DFleePosition`.
+    pub flee_position: glam::Vec2,
+    /// `gaRoutes`.
+    pub ped_routes: crate::ped::routes::PedRoutes,
+    /// The enter and exit animation offsets (`vecPedCarDoorAnimOffset` and friends).
+    pub ped_anim_offsets: crate::ped::doors::AnimOffsets,
+    /// `gAccidentManager`.
+    pub accidents: crate::control::accident::AccidentManager,
+    /// `gFireManager`.
+    pub fires: crate::control::fire::FireManager,
+    /// `CWorld::Players[PlayerInFocus]`.
+    pub player_info: crate::player_info::PlayerInfo,
+    /// The function statics of `CPed::ProcessBuoyancy`: when the next raindrops and water circles are due.
+    pub ped_splash_timers: [u32; 2],
+    /// The function static `cancelJack` of `CPed::ProcessControl`.
+    pub cancel_jack: bool,
 }
 
 impl Ents {
@@ -323,11 +347,11 @@ impl Ents {
     fn los_col_model(&self, e: &Ent, dead_peds: bool) -> Option<Arc<ColModel>> {
         match &e.kind {
             Kind::Ped(p) => {
-                if !(e.base.flags.uses_collision || dead_peds && p.dead) {
+                if !(e.base.flags.uses_collision || dead_peds && p.dead()) {
                     return None;
                 }
                 // shortcut: Vice City animates a skinned col model here, the renderer is not ported
-                if p.use_ground_col_model && self.game() == Game::Gta3 {
+                if p.use_ground_col_model() && self.game() == Game::Gta3 {
                     return Some(Arc::new(self.temp_col.ped_ground_hit.clone()));
                 }
                 match &self.models.get(e.base.model_index as i32)?.kind {
@@ -398,6 +422,21 @@ impl World {
                 explosions: Default::default(),
                 pending_explosions: vec![],
                 player_ped: None,
+                ped_types: Default::default(),
+                ped_stats: Default::default(),
+                fight_moves: vec![Default::default(); crate::ped::data::fight_move::NUM],
+                weapon_infos: Default::default(),
+                gangs: crate::ped::types::Gangs::new(-1, [-1; 7]),
+                anim: crate::anim::AnimManager::new(game),
+                paths: Default::default(),
+                flee_position: glam::Vec2::ZERO,
+                ped_routes: Default::default(),
+                ped_anim_offsets: Default::default(),
+                accidents: Default::default(),
+                fires: Default::default(),
+                player_info: Default::default(),
+                ped_splash_timers: [0; 2],
+                cancel_jack: false,
             },
             grid,
             sectors: vec![Sector::default(); (grid.num * grid.num) as usize],
@@ -874,6 +913,76 @@ impl World {
         !blocked
     }
 
+    /// The vehicles and objects a ped route walks around, in the sector box `CPedPath::CalcPedRoute` scans.
+    pub fn route_blockades(&mut self, start: Vec3, end_x: f32, end_y: f32) -> Vec<crate::control::pathfind::Blockade> {
+        let g = self.grid;
+        let min = (g.index_x(start.x).max(0), g.index_y(start.y).max(0));
+        let max = (g.index_x(end_x).min(g.num - 1), g.index_y(end_y).min(g.num - 1));
+        self.advance_scan_code();
+        let mut out = vec![];
+        let kinds = Kinds { vehicles: true, objects: true, ..Kinds::NONE };
+        self.scan_box(min, max, kinds, |ents, r, _| {
+            let Some(e) = ents.pools.get(r) else { return false };
+            if e.base.scan_code == ents.scan_code || !e.base.flags.uses_collision {
+                return false;
+            }
+            let (m, model) = (e.base.matrix, e.base.model_index);
+            ents.first_visit(r);
+            if let Some(col) = ents.col_model(model) {
+                out.push(crate::control::pathfind::Blockade {
+                    pos: m.pos,
+                    right: m.right,
+                    forward: m.forward,
+                    bb_min: col.bounding_box.min,
+                    bb_max: col.bounding_box.max,
+                    bound_centre: m.transform_point(col.bounding_sphere.center),
+                    bound_radius: col.bounding_sphere.radius,
+                });
+            }
+            false
+        });
+        out
+    }
+
+    /// `CPedPath::CalcPedRoute` with the blockades gathered from the world.
+    pub fn calc_ped_route(&mut self, path_type: i8, position: Vec3, destination: Vec3, max_points: usize) -> Option<Vec<Vec3>> {
+        let mid = (position + destination) * 0.5;
+        let blockades = if path_type != crate::control::pathfind::ROUTE_NO_BLOCKADE {
+            // the original's end y is mid.x + 28, kept
+            self.route_blockades(Vec3::new(mid.x - 14.0, mid.y - 14.0, mid.z), mid.x + 28.0, mid.x + 28.0)
+        } else {
+            vec![]
+        };
+        crate::control::pathfind::calc_ped_route(path_type, position, destination, max_points, &blockades)
+    }
+
+    /// `GetBoundCentre`: the centre of the collision model's bounding sphere in the world.
+    pub fn bound_centre(&self, r: EntityRef) -> Vec3 {
+        let Some(e) = self.get(r) else { return Vec3::ZERO };
+        self.ents.col_model(e.base.model_index).map_or(e.base.position(), |c| e.base.bound_centre(&c))
+    }
+
+    /// The hit collision model a ped's attacks are tested with (`GetHitColModel`, or the ground-hit model).
+    pub fn ped_hit_col_model(&self, r: EntityRef, ground: bool) -> Option<Arc<ColModel>> {
+        if ground {
+            return Some(Arc::new(self.ents.temp_col.ped_ground_hit.clone()));
+        }
+        match &self.ents.models.get(self.get(r)?.base.model_index as i32)?.kind {
+            crate::modelinfo::Kind::Ped(pm) => pm.hit_col_model.clone(),
+            _ => None,
+        }
+    }
+
+    /// The entity's collision model (`GetColModel`).
+    pub fn col_model_of(&self, r: EntityRef) -> Option<Arc<ColModel>> {
+        self.ents.col_model(self.get(r)?.base.model_index)
+    }
+
+    /// `GetBoundRadius`.
+    pub fn bound_radius_of(&self, r: EntityRef) -> f32 {
+        self.get(r).map_or(0.0, |e| self.ents.bound_radius(e))
+    }
+
     /// `FindGroundZForCoord`.
     pub fn find_ground_z_for_coord(&mut self, x: f32, y: f32) -> f32 {
         let kinds = Kinds { buildings: true, dummies: true, ..Kinds::NONE };
@@ -896,6 +1005,11 @@ impl World {
 
     /// `TestSphereAgainstWorld`: the first entity a sphere touches.
     pub fn test_sphere_against_world(&mut self, centre: Vec3, radius: f32, ignore: Option<EntityRef>, kinds: Kinds, ignore_some_objects: bool) -> Option<EntityRef> {
+        self.test_sphere_against_world_point(centre, radius, ignore, kinds, ignore_some_objects).map(|(r, _)| r)
+    }
+
+    /// `TestSphereAgainstWorld` plus the first contact point of the sphere (`gaTempSphereColPoints[0]`).
+    pub fn test_sphere_against_world_point(&mut self, centre: Vec3, radius: f32, ignore: Option<EntityRef>, kinds: Kinds, ignore_some_objects: bool) -> Option<(EntityRef, Vec3)> {
         let (min, max) = self.range_box(centre, radius);
         self.advance_scan_code();
         let sphere = Sphere::new(radius, Vec3::ZERO, 0, 0);
@@ -926,7 +1040,7 @@ impl World {
                     && ents.models.get(e.base.model_index as i32).and_then(|m| m.vehicle()).is_some_and(|v| v.vehicle_type == vehicle_type::CAR)
                     && e.base.model_index != dodo;
                 if hit || (car && radius + col.bounding_box.max.x > distance) {
-                    found = Some(r);
+                    found = Some((r, points[0].point));
                     return true;
                 }
             }

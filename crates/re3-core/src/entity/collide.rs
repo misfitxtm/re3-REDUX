@@ -58,7 +58,7 @@ fn friction_turn_force(e: &mut Ent, j: Vec3, p: Vec3) {
 }
 
 fn is_player_ped(e: &Ent) -> bool {
-    matches!(&e.kind, Kind::Ped(p) if p.is_player)
+    matches!(&e.kind, Kind::Ped(p) if p.is_player())
 }
 
 fn stands_on(e: &Ent, other: EntityRef) -> bool {

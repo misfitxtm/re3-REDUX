@@ -423,6 +423,39 @@ impl Quat {
     }
 }
 
+/// `CVector::Heading`: 0 faces +y, positive turns left.
+pub fn heading(v: Vec3) -> f32 {
+    (-v.x).atan2(v.y)
+}
+
+/// `CVector2D::Normalise` (no zero check, so a zero vector gives NaN like the original).
+pub fn normalise_2d(v: Vec2) -> Vec2 {
+    let inv = 1.0 / (v.x * v.x + v.y * v.y).sqrt();
+    Vec2::new(v.x * inv, v.y * inv)
+}
+
+/// `CVector2D::NormaliseSafe`.
+pub fn normalise_safe_2d(v: Vec2) -> Vec2 {
+    let sq = v.x * v.x + v.y * v.y;
+    if sq > 0.0 {
+        let inv = 1.0 / sq.sqrt();
+        Vec2::new(v.x * inv, v.y * inv)
+    } else {
+        Vec2::new(1.0, v.y)
+    }
+}
+
+impl Matrix {
+    /// `RwMatrixRotate(axis, degrees, rwCOMBINEPOSTCONCAT)`: rotates the axes and the position about `axis`.
+    pub fn rotate_about_axis(&mut self, axis: Vec3, degrees: f32) {
+        let q = glam::Quat::from_axis_angle(axis.normalize_or_zero(), degrees.to_radians());
+        self.right = q * self.right;
+        self.forward = q * self.forward;
+        self.up = q * self.up;
+        self.pos = q * self.pos;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

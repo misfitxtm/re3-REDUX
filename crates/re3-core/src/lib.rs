@@ -12,3 +12,7 @@ pub mod entity;
 pub mod world;
 pub mod vehicle;
 pub mod weapons;
+pub mod ped;
+pub mod player_info;
+pub mod control;
+pub mod audio;

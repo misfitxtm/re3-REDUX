@@ -38,6 +38,8 @@ pub enum WorldEvent {
     WindowExplosion { entity: EntityRef, pos: Vec3 },
     /// `CPopulation::RemovePed`.
     RemovePed(EntityRef),
+    /// A ped landed hard on `by`: `InflictDamage(by, WEAPONTYPE_FALL, damage, torso, direction)`.
+    PedFall { ped: EntityRef, by: EntityRef, damage: f32, direction: u8 },
 }
 
 fn is_ped(e: &Ent) -> bool {
@@ -82,7 +84,7 @@ fn add_treadable_record(this: &mut Ent, ent: &Ent, ref_ent: EntityRef) {
 }
 
 /// `CPhysical::AddCollisionRecord(ent)` on `this`.
-fn add_collision_record(this: &mut Ent, ent: &mut Ent, ref_ent: EntityRef, time_ms: u32) {
+pub(super) fn add_collision_record(this: &mut Ent, ent: &mut Ent, ref_ent: EntityRef, time_ms: u32) {
     add_treadable_record(this, ent, ref_ent);
     this.base.flags.has_collided = true;
     ent.base.flags.has_collided = true;
@@ -173,6 +175,9 @@ fn car_entity_collision(ents: &mut Ents, a: &mut Ent, ra: EntityRef, b: &mut Ent
 
 /// `ProcessEntityCollision`: A's col model against B's (no lines), recording the contact.
 fn process_entity_collision(ents: &mut Ents, a: &mut Ent, ra: EntityRef, b: &mut Ent, rb: EntityRef, points: &mut [ColPoint]) -> usize {
+    if is_ped(a) {
+        return super::ped_collision::ped_entity_collision(ents, a, ra, b, rb, points);
+    }
     if matches!(&a.kind, Kind::Vehicle(v) if matches!(v.sub, crate::vehicle::base::VehicleSub::Car(_))) {
         return car_entity_collision(ents, a, ra, b, rb, points);
     }
@@ -506,7 +511,7 @@ fn process_collision_sector_list(ents: &mut Ents, rng: &mut Rng, sector: &Sector
             let b_up_z = b.base.matrix.up.z;
             let b_obj = if let Kind::Object(o) = &b.kind { Some((o.created_by, o.has_been_damaged, o.colliding_entity, o.uproot_limit)) } else { None };
             let a_obj = if let Kind::Object(o) = &a.kind { Some((o.created_by, o.has_been_damaged, o.colliding_entity)) } else { None };
-            let a_ped_colliding = if let Kind::Ped(p) = &a.kind { Some((p.colliding_entity, p.knocked_up_into_air)) } else { None };
+            let a_ped_colliding = if let Kind::Ped(p) = &a.kind { Some((p.colliding_entity, p.flags.knocked_up_into_air)) } else { None };
             let b_ped_colliding = if let Kind::Ped(p) = &b.kind { p.colliding_entity } else { None };
             use crate::entity::object::CreatedBy;
 
@@ -661,9 +666,9 @@ fn process_collision_sector_list(ents: &mut Ents, rng: &mut Rng, sector: &Sector
                 respond_pair(ents, rng, a, ra, &mut b, rb, &points[..n], &mut maxima);
 
                 let a_speed_sq = magnitude_squared(phys(a).move_speed);
-                if is_ped(&b) && is_vehicle(a) && (!matches!(&b.kind, Kind::Ped(p) if p.is_player) || (b.base.flags.has_hit_wall && a_speed_sq > 0.05 * 0.05)) {
+                if is_ped(&b) && is_vehicle(a) && (!matches!(&b.kind, Kind::Ped(p) if p.is_player()) || (b.base.flags.has_hit_wall && a_speed_sq > 0.05 * 0.05)) {
                     ents.events.push(WorldEvent::KillPedWithCar { ped: rb, vehicle: ra, impulse: maxima.1 });
-                } else if b_model == train && is_ped(a) && (!matches!(&a.kind, Kind::Ped(p) if p.is_player) || a.base.flags.has_hit_wall) {
+                } else if b_model == train && is_ped(a) && (!matches!(&a.kind, Kind::Ped(p) if p.is_player()) || a.base.flags.has_hit_wall) {
                     ents.events.push(WorldEvent::KillPedWithCar { ped: ra, vehicle: rb, impulse: maxima.0 * 2.0 });
                 } else if is_object(&b) && b.base.flags.uses_collision && is_vehicle(a) {
                     // the original passes impulse B here too
@@ -870,7 +875,7 @@ impl World {
         let move_speed = e.phys.as_ref().unwrap().move_speed;
         let mut dist_sq = magnitude_squared(move_speed) * (saved_step * saved_step);
         let num_steps = |dist_sq: f32, x: f32| (dist_sq.sqrt() * (1.0 / x)).ceil() as i32;
-        let is_player_ped = matches!(&e.kind, Kind::Ped(p) if p.is_player);
+        let is_player_ped = matches!(&e.kind, Kind::Ped(p) if p.is_player());
         let a_ty = e.base.ty;
 
         if a_ty == EntityType::Ped && (dist_sq >= 0.2 * 0.2 || is_player_ped) {
@@ -934,7 +939,7 @@ impl World {
             p.apply_turn_speed(&mut e.base.matrix, t);
             let hit = self.check_collision(r, rng);
             let e = self.get_mut(r).unwrap();
-            let standing_fix = matches!(&e.kind, Kind::Ped(p) if !p.was_standing && p.is_standing) && e.phys.as_ref().unwrap().move_speed.z == 0.0;
+            let standing_fix = matches!(&e.kind, Kind::Ped(p) if !p.flags.was_standing && p.flags.is_standing) && e.phys.as_ref().unwrap().move_speed.z == 0.0;
             if standing_fix {
                 saved_matrix.pos.z = e.base.position().z;
             }

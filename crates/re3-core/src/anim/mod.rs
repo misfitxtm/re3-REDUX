@@ -21,11 +21,46 @@ pub mod flags {
     pub const PARTIAL: u32 = 0x10;
     pub const MOVEMENT: u32 = 0x20;
     pub const HAS_TRANSLATION: u32 = 0x40;
+    /// GTA III values from here on (`CPed::PlayFootSteps`, `Chat`, blocking and frontal falls).
+    pub const WALK: u32 = 0x80;
+    pub const IDLE: u32 = 0x100;
+    pub const NOWALK: u32 = 0x200;
+    pub const BLOCK: u32 = 0x400;
+    pub const FRONTAL: u32 = 0x800;
 
     /// Differs between the games (0x1000 in GTA III, 0x80 in Vice City).
     pub fn has_x_translation(game: super::Game) -> u32 {
         if game == super::Game::Vc { 0x80 } else { 0x1000 }
     }
+}
+
+/// `AssocGroupId` (GTA III).
+pub mod assoc_group {
+    pub const STD: usize = 0;
+    pub const PLAYER: usize = 1;
+    pub const PLAYERROCKET: usize = 2;
+    pub const PLAYER1ARMED: usize = 3;
+    pub const PLAYER2ARMED: usize = 4;
+    pub const PLAYERBBBAT: usize = 5;
+    pub const SHUFFLE: usize = 6;
+    pub const OLD: usize = 7;
+    pub const GANG1: usize = 8;
+    pub const GANG2: usize = 9;
+    pub const FAT: usize = 10;
+    pub const OLDFAT: usize = 11;
+    pub const WOMAN: usize = 12;
+    pub const WOMANSHOP: usize = 13;
+    pub const BUSYWOMAN: usize = 14;
+    pub const SEXYWOMAN: usize = 15;
+    pub const OLDWOMAN: usize = 16;
+    pub const FATWOMAN: usize = 17;
+    pub const PANICCHUNKY: usize = 18;
+    pub const PLAYERBACK: usize = 19;
+    pub const PLAYERLEFT: usize = 20;
+    pub const PLAYERRIGHT: usize = 21;
+    pub const ROCKETBACK: usize = 22;
+    pub const ROCKETLEFT: usize = 23;
+    pub const ROCKETRIGHT: usize = 24;
 }
 
 /// `AnimBlendFrameData::flag` bits.

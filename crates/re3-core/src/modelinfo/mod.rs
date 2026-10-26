@@ -823,6 +823,14 @@ impl Indices {
         }
     }
 
+    /// The model a GTA III slot (`modelinfo::indices_gta3::slot`) resolved to; -1 in Vice City.
+    pub fn gta3_slot(&self, slot: usize) -> i16 {
+        match self {
+            Self::Gta3(i) => i.get(slot),
+            Self::Vc(_) => -1,
+        }
+    }
+
     pub fn exploding_barrel(&self) -> i16 {
         match self {
             Self::Gta3(i) => i.get(indices_gta3::slot::EXPLODINGBARREL),

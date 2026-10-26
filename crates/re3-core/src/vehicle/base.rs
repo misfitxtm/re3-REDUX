@@ -104,12 +104,43 @@ pub struct PadState {
 pub struct AutoPilot {
     pub car_mission: u8,
     pub temp_action: u8,
+    /// `m_nTimeTempAction`.
+    pub time_temp_action: u32,
     pub time_to_start_mission: u32,
     pub stay_in_current_level: bool,
     pub ignore_pathfinding: bool,
     pub slowed_down_because_of_cars: bool,
     pub slowed_down_because_of_peds: bool,
     pub max_traffic_speed: f32,
+    /// `m_nCruiseSpeed`.
+    pub cruise_speed: u8,
+    /// `m_nDrivingStyle` (`eCarDrivingStyle`).
+    pub driving_style: u8,
+    /// `m_nPrevRouteNode`.
+    pub prev_route_node: i32,
+}
+
+/// `eTempAction`.
+pub mod temp_action {
+    pub const NONE: u8 = 0;
+    pub const WAIT: u8 = 1;
+    pub const REVERSE: u8 = 2;
+    pub const GOFORWARD: u8 = 8;
+}
+
+/// `eCarMission`, the ones the ped code sets.
+pub mod car_mission {
+    pub const NONE: u8 = 0;
+    pub const CRUISE: u8 = 1;
+    pub const RAMPLAYER_FARAWAY: u8 = 2;
+}
+
+/// `eCarDrivingStyle`.
+pub mod driving_style {
+    pub const STOP_FOR_CARS: u8 = 0;
+    pub const SLOW_DOWN_FOR_CARS: u8 = 1;
+    pub const AVOID_CARS: u8 = 2;
+    pub const PLOUGH_THROUGH: u8 = 3;
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -204,6 +235,8 @@ pub struct VehicleData {
     pub radio_station: u8,
     pub rain_audio_counter: u8,
     pub rain_samples_counter: u8,
+    /// `m_pCarFire`: the fire burning on the car (an index into the fire manager).
+    pub car_fire: Option<usize>,
     pub car_horn_timer: u8,
     pub car_horn_pattern: u8,
     pub siren_or_alarm: bool,
@@ -249,7 +282,7 @@ impl VehicleData {
         Self {
             sub: VehicleSub::None,
             handling: 0,
-            auto_pilot: AutoPilot { time_to_start_mission: time_ms, ..Default::default() },
+            auto_pilot: AutoPilot { time_to_start_mission: time_ms, cruise_speed: 10, ..Default::default() },
             current_colour1: 0,
             current_colour2: 0,
             extras: [0; 2],
@@ -289,6 +322,7 @@ impl VehicleData {
             radio_station: (rng.number() % 10) as u8,
             rain_audio_counter: 0,
             rain_samples_counter: 0,
+            car_fire: None,
             car_horn_timer: 0,
             car_horn_pattern: 0,
             siren_or_alarm: false,

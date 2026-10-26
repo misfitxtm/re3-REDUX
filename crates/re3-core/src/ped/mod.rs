@@ -1,0 +1,47 @@
+//! Peds: types and stats, then the ped itself and its AI.
+pub mod attack;
+pub mod callbacks;
+pub mod car;
+pub mod chat;
+pub mod civilian;
+pub mod clump;
+pub mod cop;
+pub mod core;
+pub mod ctx;
+pub mod damage;
+pub mod data;
+pub mod death;
+pub mod doors;
+pub mod emergency;
+pub mod evade;
+pub mod enter;
+pub mod enter_cb;
+pub mod events;
+pub mod fight;
+pub mod gang;
+pub mod ik;
+pub mod jump;
+pub mod lifecycle;
+pub mod motion;
+pub mod objective;
+pub mod pending;
+pub mod placement;
+pub mod process_control;
+pub mod process_hit;
+pub mod process_misc;
+pub mod process_objective;
+pub mod player;
+pub mod player_control;
+pub mod player_ped;
+pub mod routes;
+pub mod seek;
+pub mod states;
+pub mod threats;
+pub mod types;
+pub mod wait;
+pub mod wanted_glue;
+pub mod walk_around;
+pub mod weapons;
+
+#[cfg(test)]
+mod tests;
