@@ -32,8 +32,17 @@ pub(super) fn model_is_police(model: i16) -> bool {
     matches!(model, mi::FBICAR | mi::POLICE | mi::ENFORCER | mi::SECURICA | mi::RHINO | mi::BARRACKS)
 }
 
+impl World {
+    /// `CVehicle::BlowUpCar` for a car; what it asks of the game is queued as events.
+    pub fn blow_up_car_entity(&mut self, target: EntityRef, culprit: Option<EntityRef>) {
+        let mut events = Vec::new();
+        blow_up_other(&mut self.ents, target, culprit, &mut events);
+        self.ents.events.extend(events.into_iter().map(super::WorldEvent::Car));
+    }
+}
+
 /// Blows up another car on behalf of `culprit` (the tank running over it).
-fn blow_up_other(ents: &mut Ents, target: EntityRef, culprit: EntityRef, events: &mut Vec<CarEvent>) {
+fn blow_up_other(ents: &mut Ents, target: EntityRef, culprit: Option<EntityRef>, events: &mut Vec<CarEvent>) {
     let now = ents.timer.time_in_ms;
     let Some(mut e) = ents.pools.take(target) else { return };
     let model = e.base.model_index;
@@ -42,7 +51,7 @@ fn blow_up_other(ents: &mut Ents, target: EntityRef, culprit: EntityRef, events:
         _ => None,
     } && let Some(mut p) = Parts::of(target, &mut e)
     {
-        p.blow_up_car(Some(culprit), &h, model, now, events);
+        p.blow_up_car(culprit, &h, model, now, events);
         p.finish();
     }
     ents.pools.restore(target, e);
@@ -691,7 +700,7 @@ fn car_a_after_status(ents: &mut Ents, hooks: &mut dyn CarHooks, env: &mut CarEn
                     for t in hits {
                         let victim = ents.pools.get(t).is_some_and(|t| t.base.ty == EntityType::Vehicle && t.base.model_index != mi::RHINO && !t.base.flags.render_scorched);
                         if victim {
-                            blow_up_other(ents, t, r, cx.events);
+                            blow_up_other(ents, t, Some(r), cx.events);
                         }
                     }
                 }

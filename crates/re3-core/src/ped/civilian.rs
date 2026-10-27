@@ -186,10 +186,16 @@ impl World {
             return false;
         }
         let pos = self.epos(r);
-        let Some((phone, stand_at)) = px.hooks.nearest_free_phone(pos) else { return false };
-        if !px.hooks.phone_is_free(phone) {
+        let Some(phone) = self.ents.phones.find_nearest_free_phone(pos) else { return false };
+        if self.ents.phones.phones[phone].state != crate::control::phones::phone_state::FREE {
             return false;
         }
+        // the original aims at the box's matrix applied to its own backwards vector
+        let stand_at = self.ents.phones.phones[phone].entity.map_or(self.ents.phones.phones[phone].pos, |e| {
+            let m = self.ent(e).base.matrix;
+            m.transform_point(-m.forward)
+        });
+        let phone = phone as i16;
         self.ped_mut(r).running_to_phone = true;
         self.set_seek_pos(px, r, stand_at, 1.0);
         let pd = self.ped_mut(r);
@@ -256,15 +262,18 @@ impl World {
             return;
         }
         let pd = self.ped(r);
-        let objective = pd.objective;
+        let (objective, phone_id) = (pd.objective, pd.phone_id);
         if matches!(objective, objective::GOTO_AREA_ON_FOOT | objective::RUN_TO_AREA) && pd.next_path_node.is_some() {
             self.ped_mut(r).next_path_node = None;
         } else if pd.running_to_phone {
-            if !px.hooks.phone_is_free(pd.phone_id) {
+            let free = self.ents.phones.phones.get(phone_id.max(0) as usize).is_some_and(|p| p.state == crate::control::phones::phone_state::FREE);
+            if !free {
                 self.restore_previous_state(px, r);
                 self.ped_mut(r).phone_id = -1;
             } else {
-                px.hooks.phone_start_reporting(pd.phone_id);
+                if let Some(p) = self.ents.phones.phones.get_mut(phone_id.max(0) as usize) {
+                    p.state = crate::control::phones::phone_state::REPORTING_CRIME;
+                }
                 self.ped_mut(r).ped_state = state::FACE_PHONE;
             }
         } else if !matches!(objective, objective::KILL_CHAR_ANY_MEANS | objective::KILL_CHAR_ON_FOOT) {

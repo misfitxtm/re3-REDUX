@@ -155,6 +155,27 @@ pub struct VehicleData {
     pub node_positions: [Option<Vec3>; 19],
     /// `m_lastColorVariation`.
     pub last_colour_variation: i32,
+    /// `m_lastColour1`/`m_lastColour2`: the colours of the car made last.
+    pub last_colour1: u8,
+    pub last_colour2: u8,
+}
+
+impl VehicleData {
+    /// `AvoidSameVehicleColour`: tries up to eight other colour pairs so two cars in a row don't match.
+    pub fn avoid_same_colour(&mut self, col1: &mut u8, col2: &mut u8, rng: &mut crate::general::Rng) {
+        if self.num_colours > 1 {
+            for _ in 0..8 {
+                if *col1 != self.last_colour1 || *col2 != self.last_colour2 {
+                    break;
+                }
+                let n = rng.range_i32(0, self.num_colours as i32) as usize;
+                *col1 = self.colours1[n];
+                *col2 = self.colours2[n];
+            }
+        }
+        self.last_colour1 = *col1;
+        self.last_colour2 = *col2;
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -519,6 +540,8 @@ impl ModelInfoStore {
             wheel_positions: [Vec3::ZERO; 4],
             node_positions: [None; 19],
             last_colour_variation: 0,
+            last_colour1: 0,
+            last_colour2: 0,
         };
         self.add(id, VEHICLE, cap, "vehicle models", Kind::Vehicle(Box::new(v)))
     }
@@ -816,6 +839,24 @@ impl Indices {
         }
     }
 
+    /// GTA III only; false in Vice City.
+    pub fn is_garage_door(&self, id: i16) -> bool {
+        match self {
+            Self::Gta3(i) => i.is_garage_door(id),
+            Self::Vc(_) => false,
+        }
+    }
+
+    /// GTA III only; -1 in Vice City.
+    pub fn crusher_body(&self) -> i16 {
+        self.gta3_slot(indices_gta3::slot::CRUSHERBODY)
+    }
+
+    /// GTA III only; -1 in Vice City.
+    pub fn crusher_lid(&self) -> i16 {
+        self.gta3_slot(indices_gta3::slot::CRUSHERLID)
+    }
+
     pub fn is_fence(&self, id: i16) -> bool {
         match self {
             Self::Gta3(i) => i.is_fence(id),
@@ -842,6 +883,54 @@ impl Indices {
         match self {
             Self::Gta3(i) => i.get(indices_gta3::slot::FIRE_HYDRANT),
             Self::Vc(i) => i.get(indices_vc::slot::FIRE_HYDRANT),
+        }
+    }
+
+    /// The thrown or launched weapon's model.
+    pub fn grenade(&self) -> i16 {
+        match self {
+            Self::Gta3(_) => indices_gta3::mi::GRENADE,
+            Self::Vc(_) => indices_vc::mi::GRENADE,
+        }
+    }
+
+    /// The thrown or launched weapon's model.
+    pub fn molotov(&self) -> i16 {
+        match self {
+            Self::Gta3(_) => indices_gta3::mi::MOLOTOV,
+            Self::Vc(_) => indices_vc::mi::MOLOTOV,
+        }
+    }
+
+    /// The thrown or launched weapon's model.
+    pub fn missile(&self) -> i16 {
+        match self {
+            Self::Gta3(_) => indices_gta3::mi::MISSILE,
+            Self::Vc(_) => indices_vc::mi::MISSILE,
+        }
+    }
+
+    /// GTA III only; -1 in Vice City.
+    pub fn traffic_lights(&self) -> i16 {
+        match self {
+            Self::Gta3(i) => i.get(indices_gta3::slot::TRAFFICLIGHTS),
+            Self::Vc(_) => -1,
+        }
+    }
+
+    /// GTA III only; -1 in Vice City.
+    pub fn bridge_lift(&self) -> i16 {
+        match self {
+            Self::Gta3(i) => i.get(indices_gta3::slot::BRIDGELIFT),
+            Self::Vc(_) => -1,
+        }
+    }
+
+    /// GTA III only; -1 in Vice City.
+    pub fn bridge_road_segment(&self) -> i16 {
+        match self {
+            Self::Gta3(i) => i.get(indices_gta3::slot::BRIDGEROADSEGMENT),
+            Self::Vc(_) => -1,
         }
     }
 

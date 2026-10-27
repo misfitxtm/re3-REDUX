@@ -283,7 +283,8 @@ impl World {
         let door_flag = car_door_flag(door);
         let eligible = pd.health > 0.0
             && (pd.is_player() || matches!(pd.objective, objective::KILL_CHAR_ON_FOOT | objective::KILL_CHAR_ANY_MEANS) || (v.created_by != MISSION_VEHICLE && self.ent(car).base.model_index != mi::DODO));
-        let Some(seat) = ped_in_seat.filter(|&s| eligible && !self.is_ped_doing_drive_by_shooting(s) && self.ped(s).ped_state == state::DRIVING) else { return };
+        let looking_aside = px.hooks.camera().looking_left_or_right;
+        let Some(seat) = ped_in_seat.filter(|&s| eligible && !self.is_ped_doing_drive_by_shooting(s, looking_aside) && self.ped(s).ped_state == state::DRIVING) else { return };
         let _ = seat;
         let door_ok = match door_of_component(door) {
             Some(d) => self.car_ref(car).is_none_or(|c| c.is_door_ready(d, v.getting_in_flags) || c.is_door_fully_open(d)),

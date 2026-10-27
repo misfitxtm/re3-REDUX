@@ -34,8 +34,6 @@ pub struct EventInfo {
 /// Systems the ped code calls into that live outside the world: sound, camera, pad, script, wanted level,
 /// population, fire, particles. Every method has a harmless default.
 pub trait PedHooks {
-    /// `CPed::Say`.
-    fn say(&mut self, _ped: EntityRef, _sound: u16) {}
     /// `DMAudio.PlayOneShot` on the ped.
     fn play_one_shot(&mut self, _ped: EntityRef, _sound: u16, _volume: f32) {}
     /// `CEventList::RegisterEvent(event, EVENT_ENTITY_PED, ped, nil, time)`; `event` is an `event_type`.
@@ -46,10 +44,6 @@ pub trait PedHooks {
     }
     /// `CEventList::ClearEvent`.
     fn clear_event(&mut self, _index: usize) {}
-    /// `CTrafficLights::LightForPeds() == PED_LIGHTS_WALK`.
-    fn lights_for_peds_walk(&mut self) -> bool {
-        true
-    }
     /// `CDarkel::FrenzyOnGoing`.
     fn frenzy_on_going(&mut self) -> bool {
         false
@@ -62,20 +56,12 @@ pub trait PedHooks {
     fn report_crime(&mut self, _ty: u8, _pos: Vec3) {}
     /// `CPed::CreateDeadPedWeaponPickups` and `CreateDeadPedMoney`.
     fn create_dead_ped_pickups(&mut self, _ped: EntityRef) {}
-    /// `gPhoneInfo.m_aPhones[id].m_vecPos`.
-    fn phone_position(&mut self, _id: i16) -> Vec3 {
-        Vec3::ZERO
-    }
-    /// `gPhoneInfo.m_aPhones[id].m_nState = PHONE_STATE_FREE`.
-    fn free_phone(&mut self, _id: i16) {}
     /// `CTheScripts::IsPlayerOnAMission`.
     fn player_on_mission(&mut self) -> bool {
         false
     }
     /// `CCarCtrl::JoinCarWithRoadSystem`.
     fn join_car_with_road_system(&mut self, _veh: EntityRef) {}
-    /// A parked car became a random one (`--NumParkedCars`, `++NumRandomCars`).
-    fn car_became_random(&mut self, _veh: EntityRef) {}
     /// `AudioManager.PlayerJustLeftCar`.
     fn player_left_car(&mut self) {}
     /// `CEventList::RegisterEvent(EVENT_STEAL_CAR, EVENT_ENTITY_VEHICLE, veh, ped, 1500)`.
@@ -88,8 +74,6 @@ pub trait PedHooks {
     fn player_pad_active(&mut self) -> bool {
         false
     }
-    /// `CCarCtrl::NumLawEnforcerCars` changes with `CVehicle::ChangeLawEnforcerState`.
-    fn law_enforcer_changed(&mut self, _veh: EntityRef, _enforcer: bool) {}
     /// `CPickups::GenerateNewOne(pos, MI_MONEY, PICKUP_MONEY, amount)`.
     fn generate_money_pickup(&mut self, _pos: Vec3, _amount: i32) {}
     /// `TheCamera.IsSphereVisible`.
@@ -100,8 +84,6 @@ pub trait PedHooks {
     fn add_blood(&mut self, _pos: Vec3, _dir: Vec3) {}
     /// `AddGunshell` (the shotgun casing).
     fn add_gunshell(&mut self, _pos: Vec3, _dir: glam::Vec2, _size: f32) {}
-    /// `CDarkel::RegisterKillByPlayer` or `RegisterKillNotByPlayer`.
-    fn register_kill(&mut self, _ped: EntityRef, _method: usize, _by_player: bool, _head_shot: bool) {}
     /// `CWorld::Players[PlayerInFocus].m_nTimeLastArmourLoss` or `m_nTimeLastHealthLoss` is set.
     fn player_lost_armour_or_health(&mut self, _armour: bool) {}
     /// A body part came off a ped: the renderer spawns the flying part, hides the frames and adds the particles.
@@ -158,30 +140,12 @@ pub trait PedHooks {
     fn remove_from_interesting_vehicle_list(&mut self, _veh: EntityRef) {}
     /// `CCarCtrl::RegisterVehicleOfInterest` and `AudioManager.PlayerJustGotInCar`.
     fn player_got_in_car(&mut self, _veh: EntityRef) {}
-    /// `CCarCtrl::NumAmbulancesOnDuty` is lowered.
-    fn ambulance_off_duty(&mut self) {}
-    /// `CCarCtrl::NumFiretrucksOnDuty` is lowered.
-    fn firetruck_off_duty(&mut self) {}
     /// `DMAudio.IsMP3RadioChannelAvailable`.
     fn mp3_radio_available(&mut self) -> bool {
         false
     }
     /// A permanent dark blood-pool shadow where a bloody foot left the ground.
     fn add_blood_footprint(&mut self, _pos: Vec3, _forward: Vec3, _right: Vec3) {}
-    /// `gPhoneInfo.FindNearestFreePhone`: its id and where a ped stands to use it.
-    fn nearest_free_phone(&mut self, _pos: Vec3) -> Option<(i16, Vec3)> {
-        None
-    }
-    /// The phone is `PHONE_STATE_FREE`.
-    fn phone_is_free(&mut self, _id: i16) -> bool {
-        true
-    }
-    /// `PHONE_STATE_REPORTING_CRIME`.
-    fn phone_start_reporting(&mut self, _id: i16) {}
-    /// `gPhoneInfo.PhoneAtThisPosition`.
-    fn phone_at_position(&mut self, _pos: Vec3) -> bool {
-        false
-    }
     /// `CPad::GetPad(0)->ArePlayerControlsDisabled`.
     fn player_controls_disabled(&mut self) -> bool {
         false
@@ -258,14 +222,160 @@ pub trait PedHooks {
     fn clear_cross_hair(&mut self) {}
     /// `DMAudio.PlayFrontEndSound`.
     fn play_front_end_sound(&mut self, _sound: u16) {}
+    /// `DMAudio.PlayFrontEndSound(sound, param)` for the sounds that carry a number (clock ticks, rampage time).
+    fn front_end_sound_with(&mut self, _sound: u16, _param: i32) {}
+    /// One more of a game statistic.
+    fn stat(&mut self, _stat: StatEvent) {}
     /// `CTimer::SetTimeScale`.
     fn set_time_scale(&mut self, _scale: f32) {}
     /// `CCarCtrl::PossiblyRemoveVehicle`.
     fn possibly_remove_vehicle(&mut self, _veh: EntityRef) {}
+    /// A visual, sound or stat effect of a shot.
+    fn shot_effect(&mut self, _effect: ShotEffect) {}
+    /// `TheCamera.Find3rdPersonCamTargetVector`: where the mouse-aimed shot starts and ends.
+    fn cam_target_vector(&mut self, _range: f32, source: Vec3) -> (Vec3, Vec3) {
+        (source, source)
+    }
+    /// `CGarages::IsPointWithinHideOutGarage`.
+    fn point_in_hide_out_garage(&mut self, _pos: Vec3) -> bool {
+        false
+    }
+    /// `CStreaming::RequestModel` for a model the generation code wants soon.
+    fn request_model(&mut self, _model: i16) {}
+    /// `CStreaming::SetModelIsDeletable`.
+    fn set_model_is_deletable(&mut self, _model: i16) {}
+    /// `TheCamera.SetWideScreenOn/Off`.
+    fn camera_widescreen(&mut self, _on: bool) {}
+    /// `CPad::SetEnablePlayerControls` / `SetDisablePlayerControls` for `PLAYERCONTROL_PHONE`.
+    fn phone_controls(&mut self, _enabled: bool) {}
+    /// `PlayOneShotScriptObject`.
+    fn play_one_shot_script_object(&mut self, _sound: u16, _pos: Vec3) {}
+    /// `CPad::SetEnablePlayerControls` / `SetDisablePlayerControls` for `PLAYERCONTROL_GARAGE`.
+    fn garage_controls(&mut self, _enabled: bool) {}
+    /// `DMAudio.PlayOneShot(hGarages, sound, 1.0)`.
+    fn garage_sound(&mut self, _sound: u16) {}
+    /// `CHud::SetHelpMessage(TheText.Get(key), false)`.
+    fn help_message(&mut self, _key: &str) {}
+    /// `CPad::GetPad(0)->Mode`: the control layout.
+    fn pad_mode(&mut self) -> i16 {
+        0
+    }
+    /// One puff of the respray: `CParticle::AddParticle(PARTICLE_GARAGEPAINT_SPRAY, ..., ms_vehicleColourTable[colour])`.
+    fn garage_paint_spray(&mut self, _pos: Vec3, _colour: u8) {}
+    /// `TheCamera.SetCameraDirectlyBehindForFollowPed_CamOnAString`.
+    fn camera_directly_behind_ped(&mut self) {}
+    /// `TheCamera.SetCamPositionForFixedMode` and `TakeControl(player car, MODE_FIXED, JUMP_CUT, SCRIPT)`.
+    fn camera_fixed_for_pickup(&mut self, _pos: Vec3) {}
+    /// `TheCamera.RestoreWithJumpCut`.
+    fn camera_restore_with_jump_cut(&mut self) {}
+    /// `CMessages::AddMessage(text, time, 0)`.
+    fn add_message(&mut self, _text: &str, _time: u32) {}
+    /// `TheCamera.m_CameraAverageSpeed`.
+    fn camera_average_speed(&mut self) -> f32 {
+        0.0
+    }
+    /// `TheCamera.GenerationDistMultiplier`.
+    fn generation_dist_multiplier(&mut self) -> f32 {
+        1.0
+    }
+    /// The camera's position while `CCarCtrl::bCarsGeneratedAroundCamera` is set.
+    fn camera_generation_centre(&mut self) -> Option<Vec3> {
+        None
+    }
+    /// The model's clump is loaded (`GetRwObject()`).
+    fn model_loaded(&mut self, _model: i16) -> bool {
+        true
+    }
+    /// A fresh skeleton for a ped of `model`; None leaves the ped without a clump.
+    fn load_ped_clump(&mut self, _model: i16) -> Option<super::clump::PedClump> {
+        None
+    }
+    /// `CCutsceneMgr::IsRunning`.
+    fn cutscene_running(&mut self) -> bool {
+        false
+    }
+    /// False while the camera is in a sniper mode or the player looks sideways or back (`CCam::Mode`, `LookingLeft/Right/Behind`).
+    fn camera_allows_offscreen_despawn(&mut self) -> bool {
+        true
+    }
+    /// `CTheScripts::ClearSpaceForMissionEntity`.
+    fn clear_space_for_mission_entity(&mut self, _pos: Vec3, _entity: EntityRef) {}
+    /// `CShadows::AddPermanentShadow` with outline texture `outline` (0..3) where a dead ped far away is removed.
+    fn add_dead_ped_outline(&mut self, _pos: Vec3, _outline: u8, _angle: f32) {}
+    /// The camera work when the remote-control car is gone.
+    fn remote_mode_camera(&mut self, _step: super::player_info::RemoteCamera) {}
+    /// `CStats::DistanceTravelledInVehicle` / `OnFoot`.
+    fn add_distance_travelled(&mut self, _in_vehicle: bool, _distance: f32) {}
+    /// The WASTED or BUSTED message and the stat (the kill frenzy has already been reset).
+    fn player_wasted_or_busted(&mut self, _busted: bool) {}
+    /// Pad controls off (and shaking stopped, replays off, the unsafe countdown reset) while safe, back on after.
+    fn set_player_safe_controls(&mut self, _safe: bool) {}
+    /// `!CGame::playingIntro && !CTheScripts::IsCountdownToMakePlayerUnsafeOn()`.
+    fn can_make_player_unsafe(&mut self) -> bool {
+        true
+    }
+    /// `CProjectileInfo::RemoveAllProjectiles`.
+    fn remove_all_projectiles(&mut self) {}
+    /// `TheCamera.TakeControl(car, MODE_BEHINDCAR, INTERPOLATION, CAMCONTROL_SCRIPT)`.
+    fn camera_take_control_behind_car(&mut self, _veh: EntityRef) {}
+    /// `CMoneyMessages::RegisterOne` for a wreck's reward.
+    fn money_message(&mut self, _pos: Vec3, _amount: i32) {}
     /// `GetPedWalkLeftRight` and `GetPedWalkUpDown` of pad 0.
     fn ped_walk_axes(&mut self) -> (f32, f32) {
         (0.0, 0.0)
     }
+}
+
+/// The game statistics (`CStats`) the code counts up.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StatEvent {
+    PeopleKilledByPlayer,
+    PeopleKilledByOthers,
+    CarsExploded,
+    /// `PedsKilledOfThisType[type]++`.
+    PedKilledOfType(usize),
+    HeadsPopped,
+    KillsSinceLastCheckpoint,
+    /// `AnotherKillFrenzyPassed`.
+    KillFrenzyPassed,
+    CheckPointReachedSuccessfully,
+    KgsOfExplosivesUsed(i32),
+    CarsCrushed,
+}
+
+/// What a shot asks the renderer, audio and stats for. The random numbers the original draws for them are drawn before.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ShotEffect {
+    /// The light and the flash particles at the muzzle; `shooter_velocity` is set when the shooter moves.
+    MuzzleFlash { weapon: usize, pos: Vec3, ahead: glam::Vec2, shooter_velocity: Option<Vec3> },
+    GunSmoke { weapon: usize, pos: Vec3, ahead: glam::Vec2, speed: f32 },
+    GunShell { pos: Vec3, velocity: Vec3, size: f32, rotation: f32, first: bool },
+    Trace { from: Vec3, to: Vec3 },
+    Sparks { pos: Vec3, dir: Vec3, count: u8 },
+    BulletHitSmoke { pos: Vec3 },
+    BloodSmall { pos: Vec3, dir: Vec3, count: u8 },
+    /// `CGlass::WasGlassHitByBullet`.
+    GlassHit { victim: EntityRef, pos: Vec3 },
+    /// `DMAudio.PlayOneShot` on an entity's audio.
+    Sound { entity: EntityRef, sound: u16 },
+    /// `PlayOneShotScriptObject`.
+    ScriptSound { sound: u16, pos: Vec3 },
+    InstantHitFiredByPlayer,
+    InstantHitHitByPlayer,
+    RoundFiredByPlayer,
+    GrenadeThrown,
+    /// Five fireballs from a flamethrower, each slower than the last.
+    Flames { pos: Vec3, dir: Vec3 },
+    /// `CCoronas::bSmallMoon` flips when the sniper aims at it.
+    SniperMoon,
+    /// The first-person camera kicks back (`Beta` and `Alpha` change by these).
+    CameraKick { beta: f32, alpha: f32 },
+    /// `CamShakeNoPos`.
+    CamShake(f32),
+    /// A rocket's smoke trail puff.
+    RocketSmoke { pos: Vec3 },
+    /// `CPad::StartShake_Distance`.
+    PadShake { duration: u32, frequency: u8, pos: Vec3 },
 }
 
 /// The effects a ped makes in or near water and on dry ground.
@@ -318,6 +428,9 @@ pub struct PadState {
     pub driving_input: bool,
     /// A left stick axis or d-pad direction went down this frame.
     pub direction_just_down: bool,
+    /// `GetExitVehicle`: the enter/exit key is held.
+    pub exit_vehicle: bool,
+    pub exit_vehicle_just_down: bool,
 }
 
 /// The camera facts the player code asks for.
@@ -336,6 +449,23 @@ pub struct CameraState {
     pub free_cam: bool,
     /// `CCamera::m_bUseMouse3rdPerson`.
     pub use_mouse_3rd_person: bool,
+    /// The active cam's `Source`, `Front` and `Up`.
+    pub source: Vec3,
+    pub front: Vec3,
+    pub up: Vec3,
+    /// The active cam mode is one of the first-person weapon modes (M16, sniper, rocket launcher, with their runabouts).
+    pub weapon_first_person: bool,
+    /// The active cam mode is the heli cannon's first person view.
+    pub heli_cannon_first_person: bool,
+    /// `GetLookingLRBFirstPerson`: the first-person camera looks left, right or behind.
+    pub looking_lrb_first_person: bool,
+    /// The active cam looks left or right (`LookingLeft`, `LookingRight`).
+    pub looking_left_or_right: bool,
+    /// `TheCamera.GetLookDirection() == 0`.
+    pub look_direction_zero: bool,
+    /// `TheCamera.GetForward()`, and `CamFrontXNorm` / `CamFrontYNorm` (the camera's front on the ground, normalised).
+    pub forward: Vec3,
+    pub front_norm: glam::Vec2,
 }
 
 /// No outside systems.

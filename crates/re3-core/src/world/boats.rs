@@ -82,7 +82,8 @@ impl World {
         env.events.push(CarEvent::KillOccupants);
         v.flags.engine_on = false;
         v.flags.lights_on = false;
-        v.change_law_enforcer_state(false);
+        let law_enforcer = v.change_law_enforcer_state(false).is_some();
+        env.events.push(CarEvent::DutyEnded { ambulance: false, firetruck: false, law_enforcer });
         env.events.push(CarEvent::Explosion { kind: ExplosionKind::Car, pos, culprit });
 
         // the propeller comes loose, as a flying part

@@ -99,40 +99,154 @@ pub struct PadState {
     pub car_gun_left_right: i16,
 }
 
-/// What `CAutoPilot` fields this file touches; the rest comes with the car AI.
-#[derive(Debug, Clone, Copy, Default)]
+/// `NUM_PATH_NODES_IN_AUTOPILOT`.
+pub const NUM_PATH_NODES_IN_AUTOPILOT: usize = 8;
+
+/// `CAutoPilot`: where a car on the road system is and where it is going.
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct AutoPilot {
+    pub current_route_node: i32,
+    pub next_route_node: i32,
+    /// `m_nPrevRouteNode`.
+    pub prev_route_node: i32,
+    pub time_entered_curve: u32,
+    pub time_to_spend_on_current_curve: i32,
+    /// Indices of the car path links the car is on, is going to and came from.
+    pub current_path_node_info: u32,
+    pub next_path_node_info: u32,
+    pub previous_path_node_info: u32,
+    pub anti_reverse_timer: u32,
+    pub time_to_start_mission: u32,
+    pub previous_direction: i8,
+    pub current_direction: i8,
+    pub next_direction: i8,
+    pub current_lane: i8,
+    pub next_lane: i8,
+    /// `m_nDrivingStyle` (`eCarDrivingStyle`).
+    pub driving_style: u8,
     pub car_mission: u8,
     pub temp_action: u8,
     /// `m_nTimeTempAction`.
     pub time_temp_action: u32,
-    pub time_to_start_mission: u32,
-    pub stay_in_current_level: bool,
-    pub ignore_pathfinding: bool,
-    pub slowed_down_because_of_cars: bool,
-    pub slowed_down_because_of_peds: bool,
     pub max_traffic_speed: f32,
     /// `m_nCruiseSpeed`.
     pub cruise_speed: u8,
-    /// `m_nDrivingStyle` (`eCarDrivingStyle`).
-    pub driving_style: u8,
-    /// `m_nPrevRouteNode`.
-    pub prev_route_node: i32,
+    pub slowed_down_because_of_cars: bool,
+    pub slowed_down_because_of_peds: bool,
+    pub stay_in_current_level: bool,
+    pub stay_in_fast_lane: bool,
+    pub ignore_pathfinding: bool,
+    pub destination_coors: Vec3,
+    /// The nodes of the route the pathfinder gave (`m_aPathFindNodesInfo`), as indices into the node array.
+    pub path_find_nodes: [i32; NUM_PATH_NODES_IN_AUTOPILOT],
+    pub path_find_nodes_count: i16,
+    pub target_car: Option<EntityRef>,
 }
 
-/// `eTempAction`.
+impl AutoPilot {
+    /// `CAutoPilot::CAutoPilot`.
+    pub fn new(now: u32) -> Self {
+        Self {
+            current_route_node: 0,
+            next_route_node: 0,
+            prev_route_node: 0,
+            time_entered_curve: 0,
+            time_to_spend_on_current_curve: 1000,
+            current_path_node_info: 0,
+            next_path_node_info: 0,
+            previous_path_node_info: 0,
+            anti_reverse_timer: now,
+            time_to_start_mission: now,
+            previous_direction: 0,
+            current_direction: 1,
+            next_direction: 1,
+            current_lane: 0,
+            next_lane: 0,
+            driving_style: driving_style::STOP_FOR_CARS,
+            car_mission: car_mission::NONE,
+            temp_action: temp_action::NONE,
+            time_temp_action: 0,
+            max_traffic_speed: 10.0,
+            cruise_speed: 10,
+            slowed_down_because_of_cars: false,
+            slowed_down_because_of_peds: false,
+            stay_in_current_level: false,
+            stay_in_fast_lane: false,
+            ignore_pathfinding: false,
+            destination_coors: Vec3::ZERO,
+            path_find_nodes: [0; NUM_PATH_NODES_IN_AUTOPILOT],
+            path_find_nodes_count: 0,
+            target_car: None,
+        }
+    }
+
+    /// `CAutoPilot::RemoveOnePathNode`.
+    pub fn remove_one_path_node(&mut self) {
+        self.path_find_nodes_count -= 1;
+        for i in 0..self.path_find_nodes_count.max(0) as usize {
+            self.path_find_nodes[i] = self.path_find_nodes[i + 1];
+        }
+    }
+
+    /// `CAutoPilot::ModifySpeed`: sets the traffic speed and rescales the time on the current curve so the car doesn't jump.
+    pub fn modify_speed(&mut self, speed: f32, now: u32, links: &[crate::control::pathfind::CarPathLink]) {
+        use crate::control::car_ctrl::LANE_WIDTH;
+        self.max_traffic_speed = speed.max(0.01);
+        let between = now.wrapping_sub(self.time_entered_curve) as f32 / self.time_to_spend_on_current_curve as f32;
+        let (cur, next) = (&links[self.current_path_node_info as usize], &links[self.next_path_node_info as usize]);
+        let cur_fwd = glam::Vec2::new(self.current_direction as f32 * cur.dir.x, self.current_direction as f32 * cur.dir.y);
+        let next_fwd = glam::Vec2::new(self.next_direction as f32 * next.dir.x, self.next_direction as f32 * next.dir.y);
+        let on_cur = Vec3::new(cur.pos.x + ((self.current_lane as f32 + 0.5) * LANE_WIDTH) * cur_fwd.y, cur.pos.y - ((self.current_lane as f32 + 0.5) * LANE_WIDTH) * cur_fwd.x, 0.0);
+        let on_next = Vec3::new(next.pos.x + ((self.next_lane as f32 + 0.5) * LANE_WIDTH) * next_fwd.y, next.pos.y - ((self.next_lane as f32 + 0.5) * LANE_WIDTH) * next_fwd.x, 0.0);
+        self.time_to_spend_on_current_curve = (crate::control::curves::calc_speed_scale_factor(on_cur, on_next, cur_fwd, next_fwd) * (1000.0 / self.max_traffic_speed)) as i32;
+        // FIX_BUGS: the timer is not a float
+        self.time_entered_curve = now.wrapping_sub((between * self.time_to_spend_on_current_curve as f32) as u32);
+    }
+}
+
+impl Default for AutoPilot {
+    fn default() -> Self {
+        Self::new(0)
+    }
+}
+
+/// `eCarTempAction`.
 pub mod temp_action {
     pub const NONE: u8 = 0;
     pub const WAIT: u8 = 1;
     pub const REVERSE: u8 = 2;
+    pub const HANDBRAKETURNLEFT: u8 = 3;
+    pub const HANDBRAKETURNRIGHT: u8 = 4;
+    pub const HANDBRAKESTRAIGHT: u8 = 5;
+    pub const TURNLEFT: u8 = 6;
+    pub const TURNRIGHT: u8 = 7;
     pub const GOFORWARD: u8 = 8;
+    pub const SWERVELEFT: u8 = 9;
+    pub const SWERVERIGHT: u8 = 10;
 }
 
-/// `eCarMission`, the ones the ped code sets.
+/// `eCarMission`.
 pub mod car_mission {
     pub const NONE: u8 = 0;
     pub const CRUISE: u8 = 1;
     pub const RAMPLAYER_FARAWAY: u8 = 2;
+    pub const RAMPLAYER_CLOSE: u8 = 3;
+    pub const BLOCKPLAYER_FARAWAY: u8 = 4;
+    pub const BLOCKPLAYER_CLOSE: u8 = 5;
+    pub const BLOCKPLAYER_HANDBRAKESTOP: u8 = 6;
+    pub const WAITFORDELETION: u8 = 7;
+    pub const GOTOCOORDS: u8 = 8;
+    pub const GOTOCOORDS_STRAIGHT: u8 = 9;
+    pub const EMERGENCYVEHICLE_STOP: u8 = 10;
+    pub const STOP_FOREVER: u8 = 11;
+    pub const GOTOCOORDS_ACCURATE: u8 = 12;
+    pub const GOTO_COORDS_STRAIGHT_ACCURATE: u8 = 13;
+    pub const GOTOCOORDS_ASTHECROWSWIMS: u8 = 14;
+    pub const RAMCAR_FARAWAY: u8 = 15;
+    pub const RAMCAR_CLOSE: u8 = 16;
+    pub const BLOCKCAR_FARAWAY: u8 = 17;
+    pub const BLOCKCAR_CLOSE: u8 = 18;
+    pub const BLOCKCAR_HANDBRAKESTOP: u8 = 19;
 }
 
 /// `eCarDrivingStyle`.
@@ -141,6 +255,7 @@ pub mod driving_style {
     pub const SLOW_DOWN_FOR_CARS: u8 = 1;
     pub const AVOID_CARS: u8 = 2;
     pub const PLOUGH_THROUGH: u8 = 3;
+    pub const STOP_FOR_CARS_IGNORE_LIGHTS: u8 = 4;
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -224,6 +339,8 @@ pub struct VehicleData {
     pub change_gear_time: f32,
     pub gun_firing_time: u32,
     pub time_of_death: u32,
+    /// `CVisibilityPlugins::GetClumpAlpha`: 0 is invisible; the renderer fades it.
+    pub clump_alpha: u8,
     pub time_blocked: u16,
     pub bomb_timer: i16,
     pub blow_up_entity: Option<EntityRef>,
@@ -282,7 +399,7 @@ impl VehicleData {
         Self {
             sub: VehicleSub::None,
             handling: 0,
-            auto_pilot: AutoPilot { time_to_start_mission: time_ms, cruise_speed: 10, ..Default::default() },
+            auto_pilot: AutoPilot::new(time_ms),
             current_colour1: 0,
             current_colour2: 0,
             extras: [0; 2],
@@ -311,6 +428,7 @@ impl VehicleData {
             change_gear_time: 0.0,
             gun_firing_time: 0,
             time_of_death: 0,
+            clump_alpha: 255,
             time_blocked: 0,
             bomb_timer: 0,
             blow_up_entity: None,

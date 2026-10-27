@@ -418,6 +418,8 @@ pub struct PedData {
     pub angle_to_event: f32,
     pub anim_group: u32,
     pub vehicle_anim: Option<i32>,
+    /// `CVisibilityPlugins::GetClumpAlpha`: 0 is invisible; the renderer fades it.
+    pub clump_alpha: u8,
     pub anim_move_delta: Vec2,
     pub offset_seek: Vec3,
     pub ik: super::ik::PedIk,
@@ -521,7 +523,7 @@ pub struct PedData {
     pub clump: Option<super::clump::PedClump>,
 }
 
-pub const NO_SOUND: u16 = 0;
+pub const NO_SOUND: u16 = crate::audio::sound::NO_SOUND;
 pub const NO_WEAPON: usize = wt::UNIDENTIFIED;
 
 impl PedData {
@@ -549,6 +551,7 @@ impl PedData {
             angle_to_event: 0.0,
             anim_group: 0,
             vehicle_anim: None,
+            clump_alpha: 255,
             anim_move_delta: Vec2::ZERO,
             offset_seek: Vec3::ZERO,
             ik: Default::default(),

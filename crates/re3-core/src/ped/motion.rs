@@ -24,14 +24,14 @@ impl World {
     }
 
     /// `CPed::CheckAroundForPossibleCollisions`.
-    pub fn check_around_for_possible_collisions(&mut self, px: &mut Px, r: EntityRef) {
+    pub fn check_around_for_possible_collisions(&mut self, r: EntityRef) {
         if self.now() <= self.ped(r).ped_state_timer {
             return;
         }
         let our_centre = self.bound_centre(r);
         let kinds = Kinds { vehicles: true, objects: true, ..Kinds::NONE };
         for object in self.find_objects_in_range(our_centre, 10.0, true, 6, kinds) {
-            if self.ped(r).running_to_phone && px.hooks.phone_at_position(self.epos(object)) {
+            if self.ped(r).running_to_phone && self.ents.phones.phone_at_this_position(self.epos(object)) {
                 break;
             }
             let obj_centre = self.bound_centre(object);

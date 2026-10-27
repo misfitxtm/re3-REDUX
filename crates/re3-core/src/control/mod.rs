@@ -1,5 +1,23 @@
 //! Control: path finding, car AI, scripts and the other game-logic managers.
+pub mod bridge;
+pub mod car_ai;
+pub mod car_ctrl;
+pub mod car_gen;
+pub mod car_nodes;
+pub mod car_steer;
+pub mod car_traffic;
+pub mod curves;
+pub mod darkel;
+pub mod garage_update;
+pub mod garages;
+pub mod onscreen_timer;
 pub mod pathfind;
+pub mod phones;
+pub mod pickups;
+pub mod remote;
+pub mod restart;
+pub mod road_blocks;
+pub mod traffic_lights;
 pub mod wanted;
 pub mod fire;
 pub mod accident;

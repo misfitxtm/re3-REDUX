@@ -392,6 +392,15 @@ impl World {
         }
     }
 
+    /// `CPed::TransformToNode`: a point in a node's space, in world space.
+    pub fn transform_to_node(&self, r: EntityRef, pos: Vec3, node: usize) -> Vec3 {
+        let e = self.ent(r);
+        match self.ped_clump(r) {
+            Some(c) => e.base.matrix.transform_point(c.skeleton.world_matrix(c.nodes[node]).transform_point(pos)),
+            None => e.base.matrix.transform_point(pos),
+        }
+    }
+
     /// `CPedIK::GetComponentPosition` in the ped's own frame.
     pub fn ped_component_position(&self, r: EntityRef, node: usize) -> Vec3 {
         self.ped_clump(r).map_or(Vec3::ZERO, |c| c.skeleton.component_position(c.nodes[node]))

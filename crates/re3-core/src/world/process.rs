@@ -287,6 +287,15 @@ impl World {
         self.ents.events.extend(evs.into_iter().map(|ev| WorldEvent::Car(CarEvent::Vehicle(ev))));
     }
 
+    /// `SetIsStatic(false)` and `AddToMovingList()` for a shot or pushed entity.
+    pub fn make_moving(&mut self, r: EntityRef) {
+        if let Some(e) = self.get_mut(r) {
+            e.base.flags.is_static = false;
+            self.ents.pending_moving.push(r);
+            self.flush_moving();
+        }
+    }
+
     /// `CWorld::UseDetonator`.
     pub fn use_detonator(&mut self, rigger: EntityRef) {
         let timer_ms = 500;

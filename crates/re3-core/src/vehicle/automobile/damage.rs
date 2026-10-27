@@ -411,9 +411,11 @@ impl Parts<'_> {
         self.veh.flags.lights_on = false;
         self.veh.siren_or_alarm = false;
         self.car.flags.taxi_light = false;
+        let (ambulance, firetruck) = (self.veh.flags.is_ambulance_on_duty, self.veh.flags.is_fire_truck_on_duty);
         self.veh.flags.is_ambulance_on_duty = false;
         self.veh.flags.is_fire_truck_on_duty = false;
-        self.veh.change_law_enforcer_state(false);
+        let law_enforcer = self.veh.change_law_enforcer_state(false).is_some();
+        events.push(CarEvent::DutyEnded { ambulance, firetruck, law_enforcer });
 
         events.push(CarEvent::StartFire { culprit });
         let kind = if model_index == mi::RCBANDIT { ExplosionKind::CarQuick } else { ExplosionKind::Car };

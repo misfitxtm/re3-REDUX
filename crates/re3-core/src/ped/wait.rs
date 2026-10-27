@@ -180,7 +180,7 @@ impl World {
         };
         match self.ped(r).wait_state {
             wait_state::TRAFFIC_LIGHTS => {
-                if now > timer && px.hooks.lights_for_peds_walk() {
+                if now > timer && super::super::control::traffic_lights::light_for_peds(self.now()) == super::super::control::traffic_lights::ped_light::WALK {
                     let pd = self.ped_mut(r);
                     pd.wait_state = wait_state::FALSE;
                     pd.set_move_state(move_state::WALK);

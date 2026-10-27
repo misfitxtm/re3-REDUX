@@ -41,10 +41,12 @@ pub struct PlayerData {
     pub has_lock_on_target: bool,
     /// `m_nTargettableObjects`.
     pub targettable_objects: [Option<EntityRef>; 4],
+    /// `m_nHitAnimDelayTimer`: no new hit-by-gun animation before this time.
+    pub hit_anim_delay_timer: u32,
 }
 
 impl Default for PlayerData {
     fn default() -> Self {
-        Self { fps_move_heading: 0.0, free_aim_active: false, walk_angle: 0.0, can_be_damaged: true, evade_amount: 0, evading_from: None, move_speed: 0.0, adrenaline_active: false, combo_move: 0, have_target_selected: false, attack_button_counter: 0.0, arresting_cop: None, speed_timer_flag: false, wanted: Default::default(), current_stamina: 150.0, max_stamina: 150.0, stamina_progress: 0.0, adrenaline_time: 0, selected_wep_slot: 0, speed_timer: 0, has_lock_on_target: false, targettable_objects: [None; 4] }
+        Self { fps_move_heading: 0.0, free_aim_active: false, walk_angle: 0.0, can_be_damaged: true, evade_amount: 0, evading_from: None, move_speed: 0.0, adrenaline_active: false, combo_move: 0, have_target_selected: false, attack_button_counter: 0.0, arresting_cop: None, speed_timer_flag: false, wanted: Default::default(), current_stamina: 150.0, max_stamina: 150.0, stamina_progress: 0.0, adrenaline_time: 0, selected_wep_slot: 0, speed_timer: 0, has_lock_on_target: false, targettable_objects: [None; 4], hit_anim_delay_timer: 0 }
     }
 }

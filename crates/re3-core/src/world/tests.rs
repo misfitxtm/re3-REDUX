@@ -415,11 +415,11 @@ fn hitting_a_static_object_frees_it_and_puts_it_on_the_moving_list() {
 
 use crate::vehicle::env::{CarEnv, CarEvent, NoHooks};
 
-const LANDSTAL_MODEL: i16 = 12;
+pub(crate) const LANDSTAL_MODEL: i16 = 12;
 
 const HANDLING_CFG: &str = "LANDSTAL 1700.0 2.0 5.0 2.0 0.0 0.0 0.25 85 0.85 0.85 0.51 5 160.0 20.0 4 D 6.2 0.60 0 35.0 2.0 0.1 0.27 0.35 25000 0.25 -0.1 0.5 C00B 0 1\n;the end\n";
 
-fn world_with_cars() -> World {
+pub(crate) fn world_with_cars() -> World {
     let mut w = world();
     w.ents.handling = crate::vehicle::handling::HandlingMgr::new(&re3_formats::handling::parse_handling(HANDLING_CFG, Game::Gta3));
     w.ents.adhesive_limits = vec![vec![1.0; 6]; 6];

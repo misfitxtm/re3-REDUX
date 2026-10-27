@@ -33,7 +33,7 @@ mod ped_collision;
 mod physics;
 mod process;
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 
 pub use physics::WorldEvent;
 
@@ -279,6 +279,27 @@ pub struct Ents {
     pub fight_moves: Vec<crate::ped::data::FightMove>,
     pub weapon_infos: crate::weapons::info::WeaponInfos,
     pub gangs: crate::ped::types::Gangs,
+    pub population: crate::ped::population::Population,
+    pub car_ctrl: crate::control::car_ctrl::CarCtrl,
+    pub bridge: crate::control::bridge::Bridge,
+    pub road_blocks: crate::control::road_blocks::RoadBlocks,
+    pub restart: crate::control::restart::Restart,
+    pub zones: crate::zones::Zones,
+    pub pickups: crate::control::pickups::Pickups,
+    pub garages: crate::control::garages::Garages,
+    pub scripts: crate::script::Scripts,
+    pub script_checks: crate::script::checks::ScriptChecks,
+    pub clock: crate::clock::Clock,
+    pub darkel: crate::control::darkel::Darkel,
+    pub phones: crate::control::phones::PhoneInfo,
+    pub onscreen_timer: crate::control::onscreen_timer::OnscreenTimer,
+    /// The function-static counters of the AK47 and M16 muzzle effects (every second shot).
+    pub gun_flash_counters: [u8; 2],
+    pub projectiles: crate::weapons::projectile::Projectiles,
+    pub bullets: crate::weapons::bullet::Bullets,
+    pub shots: crate::weapons::shot::Shots,
+    /// `AddGunshell`'s function-static previous shooter position.
+    pub gunshell_prev_pos: Vec3,
     pub anim: crate::anim::AnimManager,
     pub paths: crate::control::pathfind::PathFind,
     /// `CPed::ms_vec2DFleePosition`.
@@ -304,7 +325,7 @@ impl Ents {
         self.models.game
     }
 
-    fn col_model(&self, model_index: i16) -> Option<Arc<ColModel>> {
+    pub(crate) fn col_model(&self, model_index: i16) -> Option<Arc<ColModel>> {
         self.models.get(model_index as i32)?.col_model.clone()
     }
 
@@ -427,6 +448,25 @@ impl World {
                 fight_moves: vec![Default::default(); crate::ped::data::fight_move::NUM],
                 weapon_infos: Default::default(),
                 gangs: crate::ped::types::Gangs::new(-1, [-1; 7]),
+                population: Default::default(),
+                car_ctrl: Default::default(),
+                bridge: Default::default(),
+                road_blocks: Default::default(),
+                restart: Default::default(),
+                zones: Default::default(),
+                pickups: Default::default(),
+                garages: Default::default(),
+                scripts: Default::default(),
+                script_checks: Default::default(),
+                clock: Default::default(),
+                darkel: Default::default(),
+                phones: Default::default(),
+                onscreen_timer: Default::default(),
+                gun_flash_counters: [0; 2],
+                projectiles: Default::default(),
+                bullets: Default::default(),
+                shots: Default::default(),
+                gunshell_prev_pos: Vec3::ZERO,
                 anim: crate::anim::AnimManager::new(game),
                 paths: Default::default(),
                 flee_position: glam::Vec2::ZERO,
@@ -472,7 +512,15 @@ impl World {
     /// Allocates the entity in its pool (the `new` of the original); it is not in the world until [`World::add`].
     pub fn insert(&mut self, ent: Ent) -> Option<EntityRef> {
         let pool = pool_kind(&ent.kind);
+        // `CVehicle::CVehicle` counts the car
+        let counted = match &ent.kind {
+            Kind::Vehicle(v) => Some((v.created_by, v.flags.is_law_enforcer)),
+            _ => None,
+        };
         let handle = self.ents.pools.pool_mut(pool).insert(ent)?;
+        if let Some((by, law)) = counted {
+            self.ents.car_ctrl.update_car_count(by, law, false);
+        }
         Some(EntityRef { pool, handle })
     }
 
@@ -480,6 +528,14 @@ impl World {
     pub fn delete(&mut self, r: EntityRef) -> Option<Ent> {
         self.get(r)?;
         self.remove(r);
+        // `CVehicle::~CVehicle` counts the car out
+        if let Some(Kind::Vehicle(v)) = self.get(r).map(|e| &e.kind) {
+            let (by, law, amb, fire) = (v.created_by, v.flags.is_law_enforcer, v.flags.is_ambulance_on_duty, v.flags.is_fire_truck_on_duty);
+            let cc = &mut self.ents.car_ctrl;
+            cc.update_car_count(by, law, true);
+            cc.num_ambulances_on_duty -= amb as i32;
+            cc.num_firetrucks_on_duty -= fire as i32;
+        }
         // the original would leave a stale node behind for an entity that turned static
         self.moving.retain(|&m| m != r);
         self.ents.pools.pool_mut(r.pool).remove_handle(r.handle)
@@ -1102,6 +1158,27 @@ impl World {
                 if ents.bound_radius(e) + radius > dist && out.len() < max {
                     out.push(r);
                 }
+            }
+            false
+        });
+        out
+    }
+
+    /// The vehicles in the sectors covering a box, each once, in the order the original scans them.
+    pub fn vehicles_in_sector_box(&mut self, min_x: f32, min_y: f32, max_x: f32, max_y: f32) -> Vec<EntityRef> {
+        self.entities_in_sector_box(min_x, min_y, max_x, max_y, Kinds { vehicles: true, ..Kinds::NONE })
+    }
+
+    /// The entities of the chosen kinds in the sectors covering a box, each once, in the order the original scans them.
+    pub fn entities_in_sector_box(&mut self, min_x: f32, min_y: f32, max_x: f32, max_y: f32, kinds: Kinds) -> Vec<EntityRef> {
+        let g = self.grid;
+        let min_s = (g.index_x(min_x).max(0), g.index_y(min_y).max(0));
+        let max_s = (g.index_x(max_x).min(g.num - 1), g.index_y(max_y).min(g.num - 1));
+        self.advance_scan_code();
+        let mut out = vec![];
+        self.scan_box(min_s, max_s, kinds, |ents, r, _| {
+            if ents.first_visit(r) {
+                out.push(r);
             }
             false
         });

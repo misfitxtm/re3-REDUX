@@ -386,7 +386,7 @@ impl World {
             state::LOOK_ENTITY | state::LOOK_HEADING => {} // `CPed::Look` is empty
             state::WANDER_RANGE => {
                 self.wander_range(px, r);
-                self.check_around_for_possible_collisions(px, r);
+                self.check_around_for_possible_collisions(r);
             }
             state::WANDER_PATH => self.wander_path(px, r),
             state::FLEE_POS => {

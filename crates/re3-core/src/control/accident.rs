@@ -30,6 +30,11 @@ impl Default for AccidentManager {
 }
 
 impl AccidentManager {
+    /// `CountActiveAccidents`.
+    pub fn count_active_accidents(&self) -> usize {
+        self.accidents.iter().filter(|a| a.victim.is_some()).count()
+    }
+
     pub fn next_free(&self) -> Option<usize> {
         self.accidents.iter().position(|a| a.victim.is_none())
     }

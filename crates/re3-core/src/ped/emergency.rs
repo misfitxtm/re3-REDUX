@@ -262,7 +262,7 @@ impl World {
                     std::mem::replace(&mut v.flags.is_ambulance_on_duty, false)
                 };
                 if on_duty {
-                    px.hooks.ambulance_off_duty();
+                    self.ents.car_ctrl.num_ambulances_on_duty -= 1;
                 }
             }
         }

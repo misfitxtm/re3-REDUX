@@ -591,6 +591,11 @@ impl ModelIndices {
         id == self.get(slot::FENCE) || id == self.get(slot::FENCE2)
     }
 
+    /// The garage doors and the two parts of the crusher.
+    pub fn is_garage_door(&self, id: i16) -> bool {
+        id >= 0 && ((slot::GARAGEDOOR1..=slot::GARAGEDOOR32).any(|s| id == self.get(s)) || id == self.get(slot::CRUSHERBODY) || id == self.get(slot::CRUSHERLID))
+    }
+
 
     /// The models `CWorld::RepositionOneObject` drops onto the ground.
     pub fn is_ground_repositioned(&self, id: i16) -> bool {

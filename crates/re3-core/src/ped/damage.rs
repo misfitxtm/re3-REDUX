@@ -122,10 +122,10 @@ impl World {
             self.ped_mut(r).health = 0.0;
             self.set_die(px, r, death.anim, death.delta, death.speed);
             if damaged_by == self.ents.player_ped || (damaged_by.is_some() && damaged_by == self.find_player_vehicle()) {
-                px.hooks.register_kill(r, method, true, death.head_shot);
+                self.register_kill_by_player(px, r, method, death.head_shot);
                 self.ped_mut(r).threat_entity = self.ents.player_ped;
             } else {
-                px.hooks.register_kill(r, method, false, false);
+                self.register_kill_not_by_player(px);
             }
             if method == wt::DROWNING {
                 self.ped_mut(r).flags.is_in_the_air = false;

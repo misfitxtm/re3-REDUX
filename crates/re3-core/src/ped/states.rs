@@ -100,9 +100,40 @@ impl World {
         true
     }
 
-    /// `CPed::Say`.
-    pub fn say(&mut self, px: &mut Px, r: EntityRef, sound: u16) {
-        px.hooks.say(r, sound);
+    /// `CPed::Say`: queues a comment, subject to who is talking and how fast the camera moves.
+    pub fn say(&mut self, px: &mut Px, r: EntityRef, mut audio: u16) {
+        use crate::audio::sound as s;
+        if self.ped(r).is_player() {
+            match audio {
+                s::PED_DEATH => audio = s::PED_DAMAGE,
+                s::PED_DAMAGE | s::PED_HIT | s::PED_LAND => {}
+                s::PED_BULLET_HIT | s::PED_CAR_JACKED | s::PED_DEFEND => audio = s::PED_HIT,
+                _ => return,
+            }
+        } else {
+            if px.hooks.camera_position().z + 3.0 < self.epos(r).z {
+                return;
+            }
+            let speed = px.hooks.camera_average_speed();
+            if speed > 1.65 {
+                return;
+            } else if speed > 1.25 {
+                if !matches!(audio, s::PED_DEATH | s::PED_TAXI_WAIT | s::PED_EVADE) {
+                    return;
+                }
+            } else if speed > 0.9 && !matches!(audio, s::PED_DEATH | s::PED_BURNING | s::PED_FLEE_SPRINT | s::PED_TAXI_WAIT | s::PED_EVADE | s::PED_ANNOYED_DRIVER) {
+                return;
+            }
+        }
+        let now = self.now();
+        let pd = self.ped(r);
+        if audio >= pd.queued_sound {
+            return;
+        }
+        let (_, _, max_random, override_max) = super::process_misc::COMMENT_WAIT_TIME[(audio - s::PED_DEATH) as usize];
+        if audio != pd.last_queued_sound || audio == s::PED_DEATH || override_max + pd.last_sound_start + px.rng.range_i32(0, max_random) as u32 <= now {
+            self.ped_mut(r).queued_sound = audio;
+        }
     }
 
     /// `CPed::AddWeaponModel`: only the id is kept, the atomic is the renderer's.

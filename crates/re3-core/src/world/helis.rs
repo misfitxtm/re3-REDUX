@@ -692,14 +692,13 @@ impl World {
             let line = line1 - line0;
             let length = magnitude(line);
             out = Some(line0 + line * (1.0f32.max(dist_to_heli - 5.0) / length));
-            let spin = if rng.true_false() { 0.05 } else { -0.05 };
-            if let Some(d) = self.heli_data_mut(r) {
-                d.bullet_damage += damage;
-                if (d.heli_type == HeliType::Catalina && d.bullet_damage > 400) || (d.heli_type != HeliType::Catalina && d.bullet_damage > 700) {
-                    d.angular_speed = spin;
-                    d.status = HeliStatus::ShotDown;
-                    d.explosion_timer = now + 10000;
-                }
+            let Some(d) = self.heli_data_mut(r) else { continue };
+            d.bullet_damage += damage;
+            if (d.heli_type == HeliType::Catalina && d.bullet_damage > 400) || (d.heli_type != HeliType::Catalina && d.bullet_damage > 700) {
+                // the spin is only drawn once the heli is shot down
+                d.angular_speed = if rng.true_false() { 0.05 } else { -0.05 };
+                d.status = HeliStatus::ShotDown;
+                d.explosion_timer = now + 10000;
             }
         }
         out

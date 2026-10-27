@@ -58,6 +58,10 @@ pub const PED_ANIM_DOOR_CLOSE_ROLLING: u64 = 24;
 pub const FINISHED_ATTACK: u64 = 25;
 /// `FinishFightMoveCB`.
 pub const FINISH_FIGHT_MOVE: u64 = 26;
+/// `PhonePutDownCB`.
+pub const PHONE_PUT_DOWN: u64 = 27;
+/// `PhonePickUpCB`: the phone's index is added to this.
+pub const PHONE_PICK_UP_BASE: u64 = 0x1000;
 
 impl World {
     /// Runs the callback the animation system reported for `r`.
@@ -94,6 +98,8 @@ impl World {
             PED_SET_IN_TRAIN => self.ped_set_in_train_cb(px, r),
             FINISHED_ATTACK => self.finished_attack_cb(px, r, Some(event.anim_id)),
             FINISH_FIGHT_MOVE => self.finish_fight_move_cb(px, r, event.anim_id),
+            PHONE_PUT_DOWN => self.phone_put_down_cb(px, r),
+            t if t >= PHONE_PICK_UP_BASE => self.phone_pick_up_cb(px, r, (t - PHONE_PICK_UP_BASE) as usize),
             PED_ANIM_DOOR_CLOSE_ROLLING => self.ped_anim_door_close_rolling_cb(r, Some(event.anim_id)),
             _ => {}
         }

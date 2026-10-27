@@ -630,8 +630,7 @@ impl World {
                 }
                 let model = self.ent(v).base.model_index;
                 if cop && crate::vehicle::base::VehicleData::is_law_enforcement_vehicle(model) {
-                    self.try_veh_mut(v).expect("vehicle").flags.is_law_enforcer = false;
-                    px.hooks.law_enforcer_changed(v, false);
+                    self.change_law_enforcer_state(v, false);
                 }
             } else if let Some(d) = self.try_veh_mut(v) {
                 d.remove_passenger(r);
@@ -697,8 +696,7 @@ impl World {
                 }
                 let model = self.ent(v).base.model_index;
                 if self.ped(r).ped_type == ped_type::COP && crate::vehicle::base::VehicleData::is_law_enforcement_vehicle(model) {
-                    self.try_veh_mut(v).expect("vehicle").flags.is_law_enforcer = false;
-                    px.hooks.law_enforcer_changed(v, false);
+                    self.change_law_enforcer_state(v, false);
                 }
             } else if let Some(d) = self.try_veh_mut(v) {
                 d.remove_passenger(r);
@@ -959,20 +957,14 @@ impl World {
             let v = self.try_veh_mut(veh).expect("vehicle");
             if v.created_by == PARKED_VEHICLE {
                 v.created_by = RANDOM_VEHICLE;
-                px.hooks.car_became_random(veh);
+                let cc = &mut self.ents.car_ctrl;
+                cc.num_parked_cars -= 1;
+                cc.num_random_cars += 1;
             }
-            if v.flags.is_ambulance_on_duty {
-                v.flags.is_ambulance_on_duty = false;
-                px.hooks.ambulance_off_duty();
-            }
-            if v.flags.is_fire_truck_on_duty {
-                v.flags.is_fire_truck_on_duty = false;
-                px.hooks.firetruck_off_duty();
-            }
+            self.end_emergency_duty(veh);
             let model = self.ent(veh).base.model_index;
             if ped_kind == ped_type::COP && crate::vehicle::base::VehicleData::is_law_enforcement_vehicle(model) {
-                self.try_veh_mut(veh).expect("vehicle").flags.is_law_enforcer = true;
-                px.hooks.law_enforcer_changed(veh, true);
+                self.change_law_enforcer_state(veh, true);
             }
             let v = self.try_veh_mut(veh).expect("vehicle");
             if !v.flags.engine_on {

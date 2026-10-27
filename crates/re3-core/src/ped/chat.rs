@@ -90,7 +90,7 @@ impl World {
     /// `CPed::FacePhone` (the build without PEDS_REPORT_CRIMES_ON_PHONE).
     pub fn face_phone(&mut self, px: &mut Px, r: EntityRef) -> bool {
         let pos = self.epos(r);
-        let phone = px.hooks.phone_position(self.ped(r).phone_id);
+        let phone = self.ents.phones.phones.get(self.ped(r).phone_id.max(0) as usize).map_or(glam::Vec3::ZERO, |p| p.pos);
         let current_rot = self.ped(r).rotation_cur.to_degrees();
         let mut phone_dir = radian_angle_between_points(phone.x, phone.y, pos.x, pos.y);
         self.set_look_flag_direction(r, phone_dir, false);
@@ -121,7 +121,9 @@ impl World {
         }
         self.set_idle(px, r);
         let id = self.ped(r).phone_id;
-        px.hooks.free_phone(id);
+        if let Some(p) = self.ents.phones.phones.get_mut(id.max(0) as usize) {
+            p.state = crate::control::phones::phone_state::FREE;
+        }
         self.ped_mut(r).phone_id = -1;
         true
     }

@@ -486,19 +486,10 @@ impl World {
         let car_pos = self.epos(car);
         self.get_mut(r).expect("ped").base.set_position(car_pos);
         self.add(r).ok();
-        if let Some(v) = self.try_veh_mut(car) {
-            if v.flags.is_ambulance_on_duty {
-                v.flags.is_ambulance_on_duty = false;
-                px.hooks.ambulance_off_duty();
-            }
-            if v.flags.is_fire_truck_on_duty {
-                v.flags.is_fire_truck_on_duty = false;
-                px.hooks.firetruck_off_duty();
-            }
-            if !v.flags.engine_on {
-                v.flags.engine_on = true;
-                px.hooks.play_one_shot(car, sound::CAR_ENGINE_START, 1.0);
-            }
+        self.end_emergency_duty(car);
+        if let Some(v) = self.try_veh_mut(car).filter(|v| !v.flags.engine_on) {
+            v.flags.engine_on = true;
+            px.hooks.play_one_shot(car, sound::CAR_ENGINE_START, 1.0);
         }
         let is_boat = self.try_veh(car).is_some_and(|v| v.is_boat());
         let is_bus = self.try_veh(car).is_some_and(|v| v.flags.is_bus);

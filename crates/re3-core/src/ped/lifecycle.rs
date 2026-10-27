@@ -24,6 +24,7 @@ impl World {
         let mass = 70.0;
         let phys = Physical { mass, turn_mass: 100.0, air_resistance: 0.4 / mass, elasticity: 0.05, ..Default::default() };
         let r = self.insert(Ent::new(base, Some(phys), Kind::Ped(ped)))?;
+        self.ents.population.update_ped_count(ped_type, false);
         self.give_weapon(r, wt::UNARMED, 0);
         if let Some(clump) = clump {
             self.set_ped_model(r, clump);
@@ -88,6 +89,8 @@ impl World {
                 *slot = kept.get(i).copied().flatten();
             }
         }
+        let ty = self.ped(r).ped_type;
+        self.ents.population.update_ped_count(ty, true);
         self.delete(r);
     }
 }

@@ -16,3 +16,6 @@ pub mod ped;
 pub mod player_info;
 pub mod control;
 pub mod audio;
+pub mod clock;
+pub mod script;
+pub mod zones;

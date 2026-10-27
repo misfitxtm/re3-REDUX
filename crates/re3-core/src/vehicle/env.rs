@@ -149,6 +149,8 @@ pub enum CarEvent {
     /// A part flies off (`SpawnFlyingComponent`).
     FlyingComponent { car: EntityRef, component: usize, group: u8 },
     MakeWayForSiren,
+    /// A car stopped being on duty or a law enforcer: the counters of `CCarCtrl` drop.
+    DutyEnded { ambulance: bool, firetruck: bool, law_enforcer: bool },
     /// `FireOneInstantHitRound`.
     FireInstantHit { source: Vec3, target: Vec3, damage: i32 },
     /// A helicopter part comes loose.

@@ -20,32 +20,22 @@ fn world_with_ped() -> (World, EntityRef) {
 
 #[derive(Default)]
 struct Spy {
-    said: Vec<u16>,
     events: Vec<(u32, u32)>,
     pickups: u32,
-    freed_phones: Vec<i16>,
     explosion: Option<EventInfo>,
     cleared: Vec<usize>,
-    kills: Vec<(usize, bool, bool)>,
+    stats: Vec<crate::ped::ctx::StatEvent>,
     armour_losses: u32,
     blood: u32,
 }
 
 impl PedHooks for Spy {
-    fn say(&mut self, _ped: EntityRef, sound: u16) {
-        self.said.push(sound);
-    }
-
     fn register_event(&mut self, event: u32, _ped: EntityRef, time: u32) {
         self.events.push((event, time));
     }
 
     fn create_dead_ped_pickups(&mut self, _ped: EntityRef) {
         self.pickups += 1;
-    }
-
-    fn free_phone(&mut self, id: i16) {
-        self.freed_phones.push(id);
     }
 
     fn find_closest_event(&mut self, event: u32, _pos: glam::Vec3) -> Option<EventInfo> {
@@ -56,8 +46,8 @@ impl PedHooks for Spy {
         self.cleared.push(index);
     }
 
-    fn register_kill(&mut self, _ped: EntityRef, method: usize, by_player: bool, head_shot: bool) {
-        self.kills.push((method, by_player, head_shot));
+    fn stat(&mut self, stat: crate::ped::ctx::StatEvent) {
+        self.stats.push(stat);
     }
 
     fn player_lost_armour_or_health(&mut self, armour: bool) {
@@ -123,11 +113,42 @@ fn staying_in_place_idles_instead_of_wandering() {
 }
 
 #[test]
-fn say_reaches_the_hook() {
+fn say_queues_the_most_urgent_comment() {
+    use crate::audio::sound;
     let (mut w, r) = world_with_ped();
+    w.ped_mut(r).ped_type = crate::ped::types::ped_type::CIVMALE;
     let (mut rng, mut spy) = (Rng::default(), Spy::default());
-    w.say(&mut Px { rng: &mut rng, hooks: &mut spy }, r, 7);
-    assert_eq!(spy.said, vec![7]);
+    let mut px = Px { rng: &mut rng, hooks: &mut spy };
+    assert_eq!(w.ped(r).queued_sound, NO_SOUND);
+    w.say(&mut px, r, sound::PED_EVADE);
+    w.say(&mut px, r, sound::PED_HIT);
+    w.say(&mut px, r, sound::PED_EVADE);
+    assert_eq!(w.ped(r).queued_sound, sound::PED_HIT);
+    // the player only voices a few sounds, and a death is a pain cry
+    let p = world_with_player_and_cop().1;
+    let (mut w2, _, _) = world_with_player_and_cop();
+    w2.say(&mut px, p, sound::PED_EVADE);
+    assert_eq!(w2.ped(p).queued_sound, NO_SOUND);
+    w2.say(&mut px, p, sound::PED_DEATH);
+    assert_eq!(w2.ped(p).queued_sound, sound::PED_DAMAGE);
+}
+
+#[test]
+fn a_ped_does_not_repeat_a_comment_too_soon() {
+    use crate::audio::sound;
+    let (mut w, r) = world_with_ped();
+    w.ped_mut(r).ped_type = crate::ped::types::ped_type::CIVMALE;
+    let (mut rng, mut spy) = (Rng::default(), Spy::default());
+    let mut px = Px { rng: &mut rng, hooks: &mut spy };
+    w.ents.timer.time_in_ms = 10;
+    let pd = w.ped_mut(r);
+    pd.last_queued_sound = sound::PED_EVADE;
+    pd.last_sound_start = 10;
+    w.say(&mut px, r, sound::PED_EVADE);
+    assert_eq!(w.ped(r).queued_sound, NO_SOUND);
+    w.ents.timer.time_in_ms = 60_000;
+    w.say(&mut px, r, sound::PED_EVADE);
+    assert_eq!(w.ped(r).queued_sound, sound::PED_EVADE);
 }
 
 #[test]
@@ -151,6 +172,16 @@ fn sort_peds_orders_by_distance() {
     sort_peds(&mut list, 0, 4, &|r| dist[r.handle as usize]);
     let order: Vec<u32> = list.iter().map(|r| r.handle as u32).collect();
     assert_eq!(order, vec![1, 3, 4, 2, 0]);
+}
+
+/// A world where model 10 is a 2 m box, so peds made with it can be filed in the sectors.
+fn box_world() -> World {
+    use crate::collision::{Box3, ColModel, Sphere};
+    let mut models = crate::modelinfo::ModelInfoStore::new(Game::Gta3);
+    let mi = models.add_simple_model(10).unwrap();
+    let b = Box3 { min: glam::Vec3::splat(-1.0), max: glam::Vec3::splat(1.0), surface: 0, piece: 0 };
+    mi.col_model = Some(std::sync::Arc::new(ColModel { bounding_sphere: Sphere::new(1.7, glam::Vec3::ZERO, 0, 0), bounding_box: b, boxes: vec![b], ..Default::default() }));
+    World::new(models, crate::temp_col::TempColModels::new(Game::Gta3))
 }
 
 fn with_px<T>(f: impl FnOnce(&mut Px) -> T) -> T {
@@ -306,11 +337,11 @@ fn dying_is_final_and_dead_leaves_pickups_unless_player() {
     w.set_die(&mut Px { rng: &mut rng, hooks: &mut spy }, r, anim::STD_NUM, 4.0, 0.0);
     let pd = w.ped(r);
     assert_eq!((pd.ped_state, pd.health, pd.bloody_footprint_count_or_death_time), (state::DIE, 0.0, 4000));
-    assert_eq!(spy.said, vec![sound::PED_DEATH]);
+    assert_eq!(pd.queued_sound, sound::PED_DAMAGE); // this test ped is the player: a death cry becomes a pain cry
 
-    // dying again does nothing, not even another scream
+    // dying again does nothing
     w.set_die(&mut Px { rng: &mut rng, hooks: &mut spy }, r, anim::STD_NUM, 4.0, 0.0);
-    assert_eq!(spy.said.len(), 1);
+    assert_eq!(w.ped(r).bloody_footprint_count_or_death_time, 4000);
 
     w.set_dead(&mut Px { rng: &mut rng, hooks: &mut spy }, r);
     assert_eq!(w.ped(r).ped_state, state::DEAD);
@@ -359,13 +390,15 @@ fn chatting_sets_up_the_state_and_timers() {
 fn a_phone_call_ends_when_the_timer_runs_out() {
     let (mut w, r) = world_with_ped();
     let (mut rng, mut spy) = (Rng::default(), Spy::default());
+    w.ents.phones.phones = vec![Default::default(); 5];
+    w.ents.phones.phones[3].state = crate::control::phones::phone_state::REPORTING_CRIME;
     w.ped_mut(r).phone_id = 3;
     w.ped_mut(r).phone_talk_timer = 500;
     w.ents.timer.time_in_ms = 400;
     assert!(!w.make_phonecall(&mut Px { rng: &mut rng, hooks: &mut spy }, r));
     w.ents.timer.time_in_ms = 501;
     assert!(w.make_phonecall(&mut Px { rng: &mut rng, hooks: &mut spy }, r));
-    assert_eq!((spy.freed_phones, w.ped(r).phone_id), (vec![3], -1));
+    assert_eq!((w.ents.phones.phones[3].state, w.ped(r).phone_id), (crate::control::phones::phone_state::FREE, -1));
 }
 
 #[test]
@@ -405,16 +438,22 @@ fn an_explosion_with_a_known_cause_is_investigated_and_cleared() {
 #[test]
 fn waiting_at_the_lights_ends_after_the_timer() {
     let (mut w, r) = world_with_ped();
-    w.ents.timer.time_in_ms = 1000;
+    // the pedestrian light is on WALK from 12 s into its cycle
+    w.ents.timer.time_in_ms = 12500;
     with_px(|px| w.set_wait_state(px, r, wait_state::TRAFFIC_LIGHTS, None));
     let pd = w.ped(r);
-    assert_eq!((pd.wait_state, pd.move_state, pd.wait_timer), (wait_state::TRAFFIC_LIGHTS, move_state::STILL, 1500));
+    assert_eq!((pd.wait_state, pd.move_state, pd.wait_timer), (wait_state::TRAFFIC_LIGHTS, move_state::STILL, 13000));
 
     with_px(|px| w.wait(px, r));
     assert_eq!(w.ped(r).wait_state, wait_state::TRAFFIC_LIGHTS, "timer has not run out");
-    w.ents.timer.time_in_ms = 1501;
+    w.ents.timer.time_in_ms = 13001;
     with_px(|px| w.wait(px, r));
     assert_eq!((w.ped(r).wait_state, w.ped(r).move_state), (wait_state::FALSE, move_state::WALK));
+    // on DONT WALK the ped keeps waiting
+    with_px(|px| w.set_wait_state(px, r, wait_state::TRAFFIC_LIGHTS, None));
+    w.ents.timer.time_in_ms = 16384 + 100 + 1000;
+    with_px(|px| w.wait(px, r));
+    assert_eq!(w.ped(r).wait_state, wait_state::TRAFFIC_LIGHTS);
 }
 
 #[test]
@@ -803,7 +842,7 @@ fn a_weak_punch_hurts_and_a_strong_one_kills() {
     let died = w.inflict_damage(&mut Px { rng: &mut rng, hooks: &mut spy }, victim, hit(Some(attacker), wt::UNARMED, 500.0));
     assert!(died);
     assert_eq!((w.ped(victim).health, w.ped(victim).ped_state), (0.0, state::DIE));
-    assert_eq!(spy.kills, vec![(wt::UNARMED, false, false)]);
+    assert_eq!(spy.stats, vec![crate::ped::ctx::StatEvent::PeopleKilledByOthers]);
     // already dead: nothing more happens
     assert!(!w.inflict_damage(&mut Px { rng: &mut rng, hooks: &mut spy }, victim, hit(Some(attacker), wt::UNARMED, 500.0)));
 }
@@ -1040,18 +1079,18 @@ fn arresting_the_player_stops_them_and_makes_them_harmless() {
     assert_eq!((p.arresting_cop, p.can_be_damaged), (Some(cop), false));
 }
 
-struct PhoneBox;
-impl PedHooks for PhoneBox {
-    fn nearest_free_phone(&mut self, _pos: glam::Vec3) -> Option<(i16, glam::Vec3)> {
-        Some((3, glam::Vec3::new(5.0, 0.0, 0.0)))
-    }
-}
 
 #[test]
 fn a_witness_runs_to_the_nearest_free_phone() {
     use crate::control::wanted::crime;
     let (mut w, r) = world_with_ped();
-    let (mut rng, mut hooks) = (Rng::default(), PhoneBox);
+    let (mut rng, mut hooks) = (Rng::default(), NoPedHooks);
+    w.ents.phones.phones = vec![Default::default(); 4];
+    for p in &mut w.ents.phones.phones[..3] {
+        p.state = crate::control::phones::phone_state::MESSAGE_REMOVED;
+    }
+    w.ents.phones.phones[3].pos = glam::Vec3::new(5.0, 0.0, 0.0);
+    w.ents.phones.max = 4;
     assert!(w.run_to_report_crime(&mut Px { rng: &mut rng, hooks: &mut hooks }, r, crime::POSSESSION_GUN));
     let pd = w.ped(r);
     assert_eq!((pd.ped_state, pd.phone_id, pd.running_to_phone, pd.move_state), (state::SEEK_POS, 3, true, move_state::RUN));
@@ -1101,4 +1140,683 @@ fn the_nearest_fire_is_the_one_with_the_fewest_firemen() {
     m.fires[0].firemen_putting_out = 2;
     m.fires[1].firemen_putting_out = 2;
     assert_eq!(m.find_nearest(glam::Vec3::ZERO).0, None, "two firemen on a fire is enough");
+}
+
+mod population {
+    use super::*;
+    use crate::ped::cop::cop_type;
+    use crate::ped::population::{find_safe_zone, level};
+    use crate::ped::types::ped_type;
+    use glam::Vec3;
+
+    struct Offscreen;
+    impl PedHooks for Offscreen {
+        fn is_on_screen(&mut self, _entity: EntityRef) -> bool {
+            false
+        }
+    }
+
+    #[test]
+    fn counts_follow_the_ped_type() {
+        let (mut w, _) = world_with_ped();
+        let pop = &mut w.ents.population;
+        pop.update_ped_count(ped_type::CRIMINAL, false);
+        pop.update_ped_count(ped_type::PROSTITUTE, false);
+        pop.update_ped_count(ped_type::FIREMAN, false);
+        pop.update_ped_count(ped_type::GANG3, false);
+        pop.update_ped_count(ped_type::PLAYER1, false);
+        assert_eq!((pop.num_civ_male, pop.num_civ_female, pop.num_emergency, pop.num_gang[2]), (1, 1, 1, 1));
+        pop.update_ped_count(ped_type::GANG3, true);
+        assert_eq!(pop.num_gang[2], 0);
+    }
+
+    #[test]
+    fn making_and_destroying_a_ped_moves_the_count() {
+        let (mut w, _) = world_with_ped();
+        let (mut rng, mut hooks) = (Rng::default(), NoPedHooks);
+        let mut px = Px { rng: &mut rng, hooks: &mut hooks };
+        let r = w.add_ped(&mut px, ped_type::CIVFEMALE, -1, Vec3::new(5.0, 6.0, 7.0)).unwrap();
+        assert_eq!((w.ents.population.num_civ_female, w.epos(r)), (1, Vec3::new(5.0, 6.0, 7.0)));
+        w.remove_ped(&mut px, r);
+        assert_eq!(w.ents.population.num_civ_female, 0);
+        assert!(w.try_ped(r).is_none());
+    }
+
+    #[test]
+    fn a_cop_comes_with_its_type_and_weapons() {
+        let (mut w, _) = world_with_ped();
+        let (mut rng, mut hooks) = (Rng::default(), NoPedHooks);
+        let mut px = Px { rng: &mut rng, hooks: &mut hooks };
+        let r = w.add_ped(&mut px, ped_type::COP, cop_type::SWAT as i32, Vec3::ZERO).unwrap();
+        assert_eq!((w.ped(r).class, w.ped(r).armour, w.ents.population.num_cop), (PedClass::Cop, 50.0, 1));
+        assert_eq!(w.ped(r).current_weapon as usize, crate::weapons::info::weapon_type::UZI);
+        let f = w.add_ped(&mut px, ped_type::FIREMAN, 0, Vec3::ZERO).unwrap();
+        assert_eq!((w.ped(f).class, w.ents.population.num_emergency), (PedClass::Emergency, 1));
+    }
+
+    #[test]
+    fn gangs_pick_their_model_pair() {
+        let (mut w, _) = world_with_ped();
+        let mut rng = Rng::default();
+        let first = crate::modelinfo::indices_gta3::mi::GANG01 as i32 + 2 * 3;
+        w.ents.gangs.0[3].ped_model_override = 0;
+        assert_eq!(w.choose_gang_occupation(&mut rng, 3), first);
+        w.ents.gangs.0[3].ped_model_override = 1;
+        assert_eq!(w.choose_gang_occupation(&mut rng, 3), first + 1);
+        w.ents.gangs.0[3].ped_model_override = -1;
+        assert!((first..first + 2).contains(&w.choose_gang_occupation(&mut rng, 3)));
+    }
+
+    #[test]
+    fn a_zone_change_picks_the_regeneration_side() {
+        let (mut w, _) = world_with_ped();
+        assert_eq!(find_safe_zone(Vec3::new(600.0, -930.0, 50.0)), Some(0));
+        assert_eq!(find_safe_zone(Vec3::new(0.0, 0.0, 0.0)), None);
+        w.deal_with_zone_change(level::COMMERCIAL, level::INDUSTRIAL, true);
+        let pop = &w.ents.population;
+        // the Callahan Bridge zone: the industrial side is where the zone's source points are
+        assert_eq!(pop.regeneration_point_a, Vec3::new(424.0, -942.0, 38.0));
+        assert!((pop.regeneration_front.length() - 1.0).abs() < 1e-5 && pop.regeneration_front.x > 0.9);
+        w.deal_with_zone_change(level::INDUSTRIAL, level::COMMERCIAL, true);
+        assert_eq!(w.ents.population.regeneration_point_a, Vec3::new(790.0, -917.0, 39.0));
+    }
+
+    #[test]
+    fn far_peds_are_removed_or_faded() {
+        let (mut w, player) = world_with_ped();
+        w.ents.player_ped = Some(player);
+        w.ped_mut(player).ped_type = ped_type::PLAYER1;
+        let (mut rng, mut hooks) = (Rng::default(), Offscreen);
+        let mut px = Px { rng: &mut rng, hooks: &mut hooks };
+        let near = w.add_ped(&mut px, ped_type::CIVMALE, -1, Vec3::new(5.0, 0.0, 0.0)).unwrap();
+        let far = w.add_ped(&mut px, ped_type::CIVMALE, -1, Vec3::new(500.0, 0.0, 0.0)).unwrap();
+        let gone = w.add_ped(&mut px, ped_type::CIVMALE, -1, Vec3::new(5.0, 0.0, 0.0)).unwrap();
+        w.ped_mut(gone).flags.fade_out = true;
+        w.ped_mut(gone).clump_alpha = 0;
+        w.manage_population(&mut px);
+        assert!(w.try_ped(near).is_some() && w.try_ped(far).is_none() && w.try_ped(gone).is_none());
+        assert_eq!(w.ents.population.num_civ_male, 1);
+
+        // on screen it fades first, and a long-dead ped starts fading by itself
+        let mut hooks = NoPedHooks;
+        let mut px = Px { rng: &mut rng, hooks: &mut hooks };
+        let seen = w.add_ped(&mut px, ped_type::CIVMALE, -1, Vec3::new(500.0, 0.0, 0.0)).unwrap();
+        w.manage_population(&mut px);
+        assert!(w.ped(seen).flags.fade_out);
+        w.ped_mut(near).ped_state = state::DEAD;
+        w.ents.timer.time_in_ms = 70_000;
+        w.manage_population(&mut px);
+        assert!(w.ped(near).flags.fade_out);
+    }
+
+    #[test]
+    fn nothing_spawns_without_a_path_graph() {
+        let (mut w, player) = world_with_ped();
+        w.ents.player_ped = Some(player);
+        w.ped_mut(player).player = Some(Default::default());
+        let (mut rng, mut hooks) = (Rng::default(), NoPedHooks);
+        let mut px = Px { rng: &mut rng, hooks: &mut hooks };
+        w.add_to_population(&mut px, 40.0, 50.0, 20.0, 25.0);
+        assert_eq!(w.ents.pools.peds.used(), 1);
+    }
+}
+
+mod dispatch {
+    use super::*;
+    use crate::world::WorldEvent;
+    use glam::Vec3;
+
+    fn px_parts() -> (Rng, NoPedHooks) {
+        (Rng::default(), NoPedHooks)
+    }
+
+    #[test]
+    fn the_cop_branch_runs_for_a_cop() {
+        let (mut w, player, cop) = world_with_player_and_cop();
+        w.ent_mut_for_test(player).base.set_position(Vec3::new(10.0, 0.0, 0.0));
+        let (mut rng, mut hooks) = px_parts();
+        w.process_ped_control(&mut Px { rng: &mut rng, hooks: &mut hooks }, cop);
+        // only CCopPed::ProcessControl measures the way to the player
+        assert!((w.ped(cop).cop.as_ref().unwrap().distance_to_target - 10.0).abs() < 1.0);
+    }
+
+    #[test]
+    fn a_hard_landing_hurts_and_a_rest_is_handed_back() {
+        let (mut w, a) = world_with_ped();
+        let (mut rng, mut hooks) = px_parts();
+        w.ent_mut_for_test(a).base.flags.uses_collision = true;
+        let health = w.ped(a).health;
+        let by = EntityRef { pool: crate::entity::PoolKind::Building, handle: 0 };
+        let rest = w.handle_ped_events(
+            &mut Px { rng: &mut rng, hooks: &mut hooks },
+            vec![WorldEvent::PedFall { ped: a, by, damage: 30.0, direction: 2 }, WorldEvent::SwitchToRealPhysics(by)],
+        );
+        assert!(w.ped(a).health < health);
+        assert_eq!(rest, vec![WorldEvent::SwitchToRealPhysics(by)]);
+    }
+
+    #[test]
+    fn an_explosion_throws_the_ped_and_blames_the_culprit() {
+        let (mut w, player, cop) = world_with_player_and_cop();
+        let (mut rng, mut hooks) = px_parts();
+        let health = w.ped(cop).health;
+        w.handle_ped_events(
+            &mut Px { rng: &mut rng, hooks: &mut hooks },
+            vec![WorldEvent::ExplosionHitPed { ped: cop, culprit: Some(player), damage: 20.0, force_dir: Vec3::new(1.0, 0.0, 0.0) }],
+        );
+        assert!(w.ped(cop).health < health || w.ped(cop).armour < 100.0);
+        assert!(matches!(w.ped(cop).ped_state, state::FALL | state::DIE | state::DEAD));
+    }
+
+    #[test]
+    fn events_about_a_ped_that_is_gone_are_ignored() {
+        let (mut w, a) = world_with_ped();
+        let (mut rng, mut hooks) = px_parts();
+        let mut px = Px { rng: &mut rng, hooks: &mut hooks };
+        w.destroy_ped(&mut px, a);
+        let rest = w.handle_ped_events(&mut px, vec![WorldEvent::RemovePed(a), WorldEvent::PedFall { ped: a, by: a, damage: 5.0, direction: 0 }]);
+        assert!(rest.is_empty());
+    }
+}
+
+mod player_info {
+    use super::*;
+    use crate::player_info::wb_state;
+
+    #[derive(Default)]
+    struct Rec {
+        ended: Vec<bool>,
+        safe: Vec<bool>,
+        money: Vec<i32>,
+        distance: Vec<(bool, f32)>,
+    }
+    impl PedHooks for Rec {
+        fn player_wasted_or_busted(&mut self, busted: bool) {
+            self.ended.push(busted);
+        }
+        fn set_player_safe_controls(&mut self, safe: bool) {
+            self.safe.push(safe);
+        }
+        fn money_message(&mut self, _pos: glam::Vec3, amount: i32) {
+            self.money.push(amount);
+        }
+        fn add_distance_travelled(&mut self, in_vehicle: bool, distance: f32) {
+            self.distance.push((in_vehicle, distance));
+        }
+    }
+
+    #[test]
+    fn dying_or_being_caught_happens_once() {
+        let (mut w, _, _) = world_with_player_and_cop();
+        let (mut rng, mut hooks) = (Rng::default(), Rec::default());
+        let mut px = Px { rng: &mut rng, hooks: &mut hooks };
+        w.ents.timer.time_in_ms = 500;
+        w.kill_player(&mut px);
+        w.arrest_player_info(&mut px);
+        w.kill_player(&mut px);
+        assert_eq!((w.ents.player_info.wb_state, w.ents.player_info.wb_time), (wb_state::WASTED, 500));
+        assert_eq!(hooks.ended, vec![false]);
+    }
+
+    #[test]
+    fn the_money_counter_catches_up_in_steps() {
+        let (mut w, _, _) = world_with_player_and_cop();
+        let (mut rng, mut hooks) = (Rng::default(), Rec::default());
+        w.ents.player_info.money = 20_000;
+        w.process_player_info(&mut Px { rng: &mut rng, hooks: &mut hooks });
+        assert_eq!(w.ents.player_info.visible_money, 1234);
+        w.ents.player_info.money = 1250;
+        w.process_player_info(&mut Px { rng: &mut rng, hooks: &mut hooks });
+        assert_eq!(w.ents.player_info.visible_money, 1235);
+        assert!((0.4..=1.45).contains(&w.ents.player_info.road_density));
+        assert_eq!(hooks.distance.len(), 2);
+        assert!(!hooks.distance[0].0);
+    }
+
+    #[test]
+    fn making_the_player_safe_and_back() {
+        let (mut w, player, _) = world_with_player_and_cop();
+        let (mut rng, mut hooks) = (Rng::default(), Rec::default());
+        let mut px = Px { rng: &mut rng, hooks: &mut hooks };
+        w.make_player_safe(&mut px, true);
+        let e = w.ent(player);
+        assert!(e.base.flags.bullet_proof && e.base.flags.explosion_proof && e.base.flags.only_damaged_by_player);
+        assert!(!w.ped(player).player.as_ref().unwrap().can_be_damaged);
+        assert!(w.player_wanted().unwrap().ignored_by_everyone);
+        w.make_player_safe(&mut px, false);
+        assert!(!w.ent(player).base.flags.bullet_proof && w.ped(player).player.as_ref().unwrap().can_be_damaged);
+        assert!(!w.player_wanted().unwrap().ignored_by_everyone);
+        assert_eq!(hooks.safe, vec![true, false]);
+    }
+
+    #[test]
+    fn chained_explosions_pay_more() {
+        let (mut w, _, _) = world_with_player_and_cop();
+        let (mut rng, mut hooks) = (Rng::default(), Rec::default());
+        let mut px = Px { rng: &mut rng, hooks: &mut hooks };
+        let car = w.ents.player_ped.unwrap(); // no vehicle data: worth nothing, but the chain still counts
+        w.ents.timer.time_in_ms = 10_000;
+        w.award_money_for_explosion(&mut px, car);
+        w.ents.timer.time_in_ms = 12_000;
+        w.award_money_for_explosion(&mut px, car);
+        assert_eq!(w.ents.player_info.explosions_since_last_reward, 2);
+        w.ents.timer.time_in_ms = 30_000;
+        w.award_money_for_explosion(&mut px, car);
+        assert_eq!(w.ents.player_info.explosions_since_last_reward, 1);
+    }
+}
+
+mod shots {
+    use super::*;
+    use crate::ped::types::ped_type;
+    use crate::weapons::info::weapon_type as wt;
+    use glam::Vec3;
+
+    #[derive(Default)]
+    struct Events {
+        got: Vec<(u32, EntityRef, EntityRef, u32)>,
+    }
+    impl PedHooks for Events {
+        fn register_event_with_culprit(&mut self, event: u32, entity: EntityRef, culprit: EntityRef, time: u32) {
+            self.got.push((event, entity, culprit, time));
+        }
+    }
+
+    #[test]
+    fn a_punch_hurts_and_is_reported_as_an_assault() {
+        let (mut w, _) = world_with_ped();
+        let (mut rng, mut hooks) = (Rng::default(), Events::default());
+        let mut px = Px { rng: &mut rng, hooks: &mut hooks };
+        let a = w.add_ped(&mut px, ped_type::CIVMALE, -1, Vec3::ZERO).unwrap();
+        let b = w.add_ped(&mut px, ped_type::CIVFEMALE, -1, Vec3::new(0.3, 0.0, 0.0)).unwrap();
+        w.ents.weapon_infos.0[wt::UNARMED].radius = 1.0;
+        w.ents.weapon_infos.0[wt::UNARMED].damage = 10;
+        {
+            let pd = w.ped_mut(a);
+            pd.near_peds[0] = Some(b);
+            pd.num_near_peds = 1;
+        }
+        let health = w.ped(b).health;
+        assert!(w.fire_melee_shot(&mut px, a, wt::UNARMED, Vec3::new(0.2, 0.0, 0.0)));
+        assert!(w.ped(b).health < health);
+        assert_eq!(hooks.got.len(), 1);
+        assert_eq!((hooks.got[0].0, hooks.got[0].1, hooks.got[0].2, hooks.got[0].3), (event_type::ASSAULT, b, a, 2000));
+    }
+
+    #[derive(Default)]
+    struct Fx {
+        effects: Vec<crate::ped::ctx::ShotEffect>,
+    }
+    impl PedHooks for Fx {
+        fn shot_effect(&mut self, e: crate::ped::ctx::ShotEffect) {
+            self.effects.push(e);
+        }
+        fn is_on_screen(&mut self, _e: EntityRef) -> bool {
+            true
+        }
+    }
+
+    fn two_peds(px: &mut Px) -> (World, EntityRef, EntityRef) {
+        let (mut w, _) = world_with_ped();
+        let a = w.add_ped(px, ped_type::CIVMALE, -1, Vec3::ZERO).unwrap();
+        let b = w.add_ped(px, ped_type::CIVFEMALE, -1, Vec3::new(0.0, 5.0, 0.0)).unwrap();
+        w.ents.weapon_infos.0[wt::COLT45].damage = 25;
+        (w, a, b)
+    }
+
+    #[test]
+    fn a_bullet_hurts_the_ped_it_hits_and_reports_it() {
+        use crate::ped::ctx::ShotEffect;
+        let (mut rng, mut hooks) = (Rng::default(), Fx::default());
+        let mut px = Px { rng: &mut rng, hooks: &mut hooks };
+        let (mut w, a, b) = two_peds(&mut px);
+        let health = w.ped(b).health;
+        let point = crate::collision::ColPoint { point: Vec3::new(0.0, 4.9, 1.0), ..Default::default() };
+        w.do_bullet_impact(&mut px, a, wt::COLT45, Some(b), Vec3::ZERO, Vec3::new(0.0, 50.0, 0.0), point, glam::Vec2::Y);
+        assert!(w.ped(b).health < health);
+        assert_eq!(w.ped(b).queued_sound, crate::audio::sound::PED_BULLET_HIT);
+        assert!(hooks.effects.iter().any(|e| matches!(e, ShotEffect::BloodSmall { count: 8, .. })));
+        assert!(hooks.effects.iter().any(|e| matches!(e, ShotEffect::Trace { to, .. } if *to == point.point)));
+    }
+
+    #[test]
+    fn a_bullet_at_nothing_only_leaves_a_trace() {
+        use crate::ped::ctx::ShotEffect;
+        let (mut rng, mut hooks) = (Rng::default(), Fx::default());
+        let mut px = Px { rng: &mut rng, hooks: &mut hooks };
+        let (mut w, a, _) = two_peds(&mut px);
+        let to = Vec3::new(0.0, 50.0, 0.0);
+        w.do_bullet_impact(&mut px, a, wt::COLT45, None, Vec3::ZERO, to, Default::default(), glam::Vec2::Y);
+        assert_eq!(hooks.effects, vec![ShotEffect::Trace { from: Vec3::ZERO, to }]);
+    }
+
+    #[test]
+    fn a_colt_shot_draws_the_shell_numbers_and_an_uzi_adds_smoke() {
+        let (mut rng, mut hooks) = (Rng::default(), Fx::default());
+        let mut px = Px { rng: &mut rng, hooks: &mut hooks };
+        let (mut w, a, _) = two_peds(&mut px);
+        let mut expect = Rng::default();
+        expect.range_f32(0.02, 0.08);
+        expect.range_f32(-20.0, 20.0);
+        let (mut rng2, mut hooks2) = (Rng::default(), Fx::default());
+        w.gun_effects(&mut Px { rng: &mut rng2, hooks: &mut hooks2 }, a, wt::COLT45, Vec3::ZERO, glam::Vec2::Y, None);
+        assert_eq!(rng2.number(), expect.number());
+        assert_eq!(hooks2.effects.len(), 1 + 3 + 1);
+        // AK47 and M16 fire their effects on every second shot only
+        let mut hooks3 = Fx::default();
+        for _ in 0..2 {
+            w.gun_effects(&mut Px { rng: &mut rng2, hooks: &mut hooks3 }, a, wt::AK47, Vec3::ZERO, glam::Vec2::Y, None);
+        }
+        assert_eq!(hooks3.effects.len(), 3);
+    }
+
+    #[test]
+    fn doom_aiming_tilts_the_shot_towards_the_nearest_ped_in_view() {
+        let (mut rng, mut hooks) = (Rng::default(), Fx::default());
+        let mut px = Px { rng: &mut rng, hooks: &mut hooks };
+        let (mut w, a, b) = two_peds(&mut px);
+        let c = w.add_ped(&mut px, ped_type::CIVMALE, -1, Vec3::new(0.0, 10.0, 2.0)).unwrap();
+        let mut target = Vec3::new(0.0, 40.0, 0.0);
+        w.aim_at_closest(a, &[a, c, b], Vec3::ZERO, &mut target);
+        // b (5 m, level) is nearest: the aim reaches its chest (0.3) at the target's distance
+        assert!((target.z - 40.0 / 5.0 * 0.3).abs() < 1.0e-4, "{target:?}");
+        // a ducking ped is aimed at lower
+        w.ped_mut(b).flags.is_ducking = true;
+        let mut target = Vec3::new(0.0, 40.0, 0.0);
+        w.aim_at_closest(a, &[b], Vec3::ZERO, &mut target);
+        assert!((target.z - 40.0 / 5.0 * -0.5).abs() < 1.0e-4);
+    }
+
+    #[derive(Default)]
+    struct Gun {
+        effects: Vec<crate::ped::ctx::ShotEffect>,
+        one_shots: Vec<(EntityRef, u16)>,
+        events: Vec<u32>,
+        first_person: bool,
+    }
+    impl PedHooks for Gun {
+        fn shot_effect(&mut self, e: crate::ped::ctx::ShotEffect) {
+            self.effects.push(e);
+        }
+        fn play_one_shot(&mut self, ped: EntityRef, sound: u16, _volume: f32) {
+            self.one_shots.push((ped, sound));
+        }
+        fn register_event_with_culprit(&mut self, event: u32, _e: EntityRef, _c: EntityRef, _t: u32) {
+            self.events.push(event);
+        }
+        fn camera(&mut self) -> crate::ped::ctx::CameraState {
+            crate::ped::ctx::CameraState { weapon_first_person: self.first_person, front: Vec3::Y, up: Vec3::Z, source: Vec3::new(0.0, -2.0, 1.0), ..Default::default() }
+        }
+    }
+
+    fn armed(px: &mut Px, weapon: usize, fire: crate::weapons::info::WeaponFire, ammo: i32) -> (World, EntityRef) {
+        let (mut w, _) = world_with_ped();
+        let a = w.add_ped(px, ped_type::CIVMALE, -1, Vec3::ZERO).unwrap();
+        let info = &mut w.ents.weapon_infos.0[weapon];
+        info.fire = fire;
+        info.range = 100.0;
+        info.ammo = 7;
+        info.reload = 1000;
+        info.damage = 10;
+        w.give_weapon(a, weapon, ammo);
+        w.set_current_weapon(a, weapon);
+        (w, a)
+    }
+
+    #[test]
+    fn firing_a_colt_uses_a_round_and_reports_the_shot() {
+        use crate::weapons::info::WeaponFire;
+        let (mut rng, mut hooks) = (Rng::default(), Gun::default());
+        let mut px = Px { rng: &mut rng, hooks: &mut hooks };
+        let (mut w, a) = armed(&mut px, wt::COLT45, WeaponFire::InstantHit, 30);
+        w.ents.timer.time_in_ms = 1000;
+        assert!(w.fire_weapon(&mut px, a, Vec3::new(0.0, 0.5, 0.6)));
+        let wp = &w.ped(a).weapons[wt::COLT45];
+        assert_eq!((wp.ammo_in_clip, wp.ammo_total, wp.state, wp.timer), (6, 29, crate::weapons::weapon::WeaponState::Firing, 2000));
+        assert!(w.ped(a).flags.is_shooting);
+        assert_eq!(hooks.one_shots, vec![(a, crate::audio::sound::WEAPON_SHOT_FIRED)]);
+        assert!(hooks.events.contains(&event_type::GUNSHOT));
+        // nothing was in the way: one trace to the end of the range
+        assert!(hooks.effects.iter().any(|e| matches!(e, crate::ped::ctx::ShotEffect::Trace { .. })));
+    }
+
+    #[test]
+    fn an_empty_clip_does_not_fire() {
+        use crate::weapons::info::WeaponFire;
+        let (mut rng, mut hooks) = (Rng::default(), Gun::default());
+        let mut px = Px { rng: &mut rng, hooks: &mut hooks };
+        let (mut w, a) = armed(&mut px, wt::COLT45, WeaponFire::InstantHit, 0);
+        assert!(!w.fire_weapon(&mut px, a, Vec3::ZERO));
+        assert!(hooks.one_shots.is_empty());
+    }
+
+    #[test]
+    fn a_shotgun_blast_is_five_traces() {
+        use crate::weapons::info::WeaponFire;
+        let (mut rng, mut hooks) = (Rng::default(), Gun::default());
+        let mut px = Px { rng: &mut rng, hooks: &mut hooks };
+        let (mut w, a) = armed(&mut px, wt::SHOTGUN, WeaponFire::InstantHit, 20);
+        assert!(w.fire_weapon(&mut px, a, Vec3::new(0.0, 0.5, 0.6)));
+        let traces = hooks.effects.iter().filter(|e| matches!(e, crate::ped::ctx::ShotEffect::Trace { .. })).count();
+        assert_eq!(traces, 5);
+    }
+
+    #[test]
+    fn a_thrown_grenade_becomes_a_projectile() {
+        use crate::weapons::info::WeaponFire;
+        let (mut rng, mut hooks) = (Rng::default(), Gun::default());
+        let mut px = Px { rng: &mut rng, hooks: &mut hooks };
+        let (mut w, a) = armed(&mut px, wt::GRENADE, WeaponFire::Projectile, 3);
+        assert!(w.fire_weapon(&mut px, a, Vec3::new(0.0, 0.5, 0.6)));
+        assert_eq!(w.ents.projectiles.0.iter().filter(|p| p.in_use).count(), 1);
+        assert_eq!(w.ped(a).weapons[wt::GRENADE].ammo_total, 2);
+    }
+
+    #[test]
+    fn the_sniper_only_fires_through_the_scope() {
+        use crate::weapons::info::WeaponFire;
+        let (mut rng, mut hooks) = (Rng::default(), Gun::default());
+        let mut px = Px { rng: &mut rng, hooks: &mut hooks };
+        let (mut w, a) = armed(&mut px, wt::SNIPERRIFLE, WeaponFire::InstantHit, 10);
+        assert!(!w.fire_weapon(&mut px, a, Vec3::ZERO));
+        assert!(w.ents.bullets.list.iter().all(|b| !b.in_use));
+        let mut scoped = Gun { first_person: true, ..Default::default() };
+        let mut px = Px { rng: &mut rng, hooks: &mut scoped };
+        assert!(w.fire_weapon(&mut px, a, Vec3::ZERO));
+        assert_eq!(w.ents.bullets.list.iter().filter(|b| b.in_use).count(), 1);
+    }
+
+    #[test]
+    fn a_punch_through_fire_weapon_marks_the_contact() {
+        use crate::weapons::info::WeaponFire;
+        let (mut rng, mut hooks) = (Rng::default(), Gun::default());
+        let mut px = Px { rng: &mut rng, hooks: &mut hooks };
+        let (mut w, a) = armed(&mut px, wt::UNARMED, WeaponFire::Melee, 0);
+        let b = w.add_ped(&mut px, ped_type::CIVFEMALE, -1, Vec3::new(0.3, 0.0, 0.0)).unwrap();
+        w.ents.weapon_infos.0[wt::UNARMED].radius = 1.0;
+        let pd = w.ped_mut(a);
+        pd.near_peds[0] = Some(b);
+        pd.num_near_peds = 1;
+        assert!(w.fire_weapon(&mut px, a, Vec3::new(0.2, 0.0, 0.0)));
+        assert_eq!(w.ped(a).weapons[wt::UNARMED].state, crate::weapons::weapon::WeaponState::MeleeMadeContact);
+    }
+
+    #[test]
+    fn only_the_player_with_an_uzi_looking_aside_is_driving_by() {
+        let (mut rng, mut hooks) = (Rng::default(), Gun::default());
+        let mut px = Px { rng: &mut rng, hooks: &mut hooks };
+        let (mut w, a) = armed(&mut px, wt::UZI, crate::weapons::info::WeaponFire::InstantHit, 30);
+        assert!(!w.is_ped_doing_drive_by_shooting(a, true));
+        w.ents.player_ped = Some(a);
+        assert!(w.is_ped_doing_drive_by_shooting(a, true));
+        assert!(!w.is_ped_doing_drive_by_shooting(a, false));
+        w.set_current_weapon(a, wt::UNARMED);
+        assert!(!w.is_ped_doing_drive_by_shooting(a, true));
+    }
+
+    #[test]
+    fn a_sniper_bullet_flies_on_and_expires() {
+        use crate::weapons::info::WeaponFire;
+        let (mut rng, mut hooks) = (Rng::default(), Gun { first_person: true, ..Default::default() });
+        let mut px = Px { rng: &mut rng, hooks: &mut hooks };
+        let (mut w, a) = armed(&mut px, wt::SNIPERRIFLE, WeaponFire::InstantHit, 10);
+        w.ents.weapon_infos.0[wt::SNIPERRIFLE].lifespan = 1000.0;
+        w.ents.weapon_infos.0[wt::SNIPERRIFLE].speed = 16.0;
+        w.ents.timer.time_step = 1.0;
+        assert!(w.fire_weapon(&mut px, a, Vec3::ZERO));
+        let start = w.ents.bullets.list.iter().find(|b| b.in_use).unwrap().pos;
+        w.update_weapons(&mut px);
+        let b = w.ents.bullets.list.iter().find(|b| b.in_use).unwrap();
+        assert!(b.pos.y > start.y && w.ents.bullets.player_sniper_bullet);
+        w.ents.timer.time_in_ms = 100_000;
+        w.update_weapons(&mut px);
+        assert!(w.ents.bullets.list.iter().all(|b| !b.in_use));
+    }
+
+    #[test]
+    fn a_sniper_hit_hurts_the_ped_and_stops_the_bullet() {
+        use crate::weapons::bullet::{Bullet, BulletHit};
+        let (mut rng, mut hooks) = (Rng::default(), Fx::default());
+        let mut px = Px { rng: &mut rng, hooks: &mut hooks };
+        let (mut w, a, b) = two_peds(&mut px);
+        let bullet = Bullet { in_use: true, weapon: wt::SNIPERRIFLE, source: Some(a), damage: 40, ..Default::default() };
+        let hit = BulletHit { entity: b, ty: crate::entity::EntityType::Ped, point: Vec3::new(0.0, 4.9, 1.0), normal: Vec3::NEG_Y, piece: 0 };
+        let health = w.ped(b).health;
+        let r = w.sniper_bullet_impact(&mut px, &bullet, &hit, true);
+        assert!(r.stop && !r.quiet);
+        assert!(w.ped(b).health < health);
+        assert_eq!(w.ped(b).queued_sound, crate::audio::sound::PED_BULLET_HIT);
+    }
+
+    #[test]
+    fn a_flame_burst_sets_a_near_ped_alight() {
+        use crate::weapons::info::{flag, WeaponFire};
+        let (mut rng, mut hooks) = (Rng::default(), Fx::default());
+        let mut px = Px { rng: &mut rng, hooks: &mut hooks };
+        let mut w = box_world();
+        let a = w.add_ped(&mut px, ped_type::CIVMALE, 10, Vec3::ZERO).unwrap();
+        let b = w.add_ped(&mut px, ped_type::CIVFEMALE, 10, Vec3::new(0.5, 0.0, 0.0)).unwrap();
+        assert!(w.ped_pointer_valid(a) && w.ped_pointer_valid(b));
+        w.ped_mut(a).near_peds[0] = Some(b);
+        w.ped_mut(a).num_near_peds = 1;
+        let info = &mut w.ents.weapon_infos.0[wt::FLAMETHROWER];
+        info.fire = WeaponFire::AreaEffect;
+        info.flags = flag::SLOWS_DOWN | flag::EXPANDS;
+        info.speed = 0.0;
+        info.lifespan = 1000.0;
+        info.radius = 2.0;
+        w.ents.timer.time_step = 1.0;
+        let (infos, timer) = (w.ents.weapon_infos.clone(), w.ents.timer.clone());
+        w.ents.shots.add(&infos, px.rng, &timer, Some(a), wt::FLAMETHROWER, Vec3::ZERO, Vec3::ZERO);
+        w.update_weapons(&mut px);
+        assert!(w.ped(b).fire.is_some());
+        assert_eq!(w.ped(b).ped_state, state::ON_FIRE);
+    }
+
+    #[test]
+    fn aiming_finds_the_ped_in_front_through_the_sectors() {
+        let (mut rng, mut hooks) = (Rng::default(), Fx::default());
+        let mut px = Px { rng: &mut rng, hooks: &mut hooks };
+        let mut w = box_world();
+        let a = w.add_ped(&mut px, ped_type::CIVMALE, 10, Vec3::ZERO).unwrap();
+        w.add_ped(&mut px, ped_type::CIVFEMALE, 10, Vec3::new(0.0, 10.0, 2.0)).unwrap();
+        let mut target = Vec3::new(0.0, 40.0, 0.0);
+        w.do_doom_aiming(a, Vec3::ZERO, &mut target);
+        // the ped at 10 m, 2 m up: the aim reaches its chest at the target's distance
+        assert!((target.z - 40.0 / 10.0 * 2.3).abs() < 1.0e-3, "{target:?}");
+        let mut target = Vec3::new(0.0, 40.0, 0.0);
+        w.do_drive_by_auto_aiming(a, Vec3::new(0.0, 0.0, 2.0), &mut target);
+        // the drive-by aim pulls the shot's end onto the line through the ped, scaled to the old length
+        let scale = (4.0f32 + 1600.0).sqrt() / 10.0;
+        assert!((target - Vec3::new(0.0, 10.0 * scale, 2.0)).length() < 1.0e-3, "{target:?}");
+    }
+
+    #[test]
+    fn a_punch_that_misses_changes_nothing() {
+        let (mut w, _) = world_with_ped();
+        let (mut rng, mut hooks) = (Rng::default(), Events::default());
+        let mut px = Px { rng: &mut rng, hooks: &mut hooks };
+        let a = w.add_ped(&mut px, ped_type::CIVMALE, -1, Vec3::ZERO).unwrap();
+        let b = w.add_ped(&mut px, ped_type::CIVFEMALE, -1, Vec3::new(50.0, 0.0, 0.0)).unwrap();
+        w.ents.weapon_infos.0[wt::UNARMED].radius = 1.0;
+        let pd = w.ped_mut(a);
+        pd.near_peds[0] = Some(b);
+        pd.num_near_peds = 1;
+        assert!(!w.fire_melee_shot(&mut px, a, wt::UNARMED, Vec3::ZERO));
+        assert!(hooks.got.is_empty());
+    }
+}
+
+mod object_population {
+    use super::*;
+    use crate::entity::object::CreatedBy;
+    use crate::ped::types::ped_type;
+    use glam::Vec3;
+
+    fn object_at(w: &mut World, px: &mut Px, pos: Vec3, by: CreatedBy) -> EntityRef {
+        let mut m = crate::math::Matrix::IDENTITY;
+        m.pos = pos;
+        let r = w.new_object(10, m, px.rng).unwrap();
+        if let Kind::Object(o) = &mut w.ent_mut_for_test(r).kind {
+            o.object_matrix = m;
+            o.created_by = by;
+        }
+        w.add(r).unwrap();
+        r
+    }
+
+    fn player_at_origin(w: &mut World, px: &mut Px) {
+        let p = w.create_ped(px, ped_type::PLAYER1, 10, None).unwrap();
+        w.add(p).unwrap();
+        w.ents.player_ped = Some(p);
+    }
+
+    #[test]
+    fn a_far_loose_object_becomes_scenery_and_comes_back_when_near() {
+        let (mut rng, mut hooks) = (Rng::default(), NoPedHooks);
+        let mut px = Px { rng: &mut rng, hooks: &mut hooks };
+        let mut w = box_world();
+        player_at_origin(&mut w, &mut px);
+        let far = Vec3::new(500.0, 0.0, 0.0);
+        let obj = object_at(&mut w, &mut px, far, CreatedBy::Game);
+        w.manage_population(&mut px);
+        assert!(w.get(obj).is_none());
+        assert_eq!(w.ents.pools.dummies.used(), 1);
+        let dummy = EntityRef { pool: crate::entity::PoolKind::Dummy, handle: w.ents.pools.dummies.handle_of(w.ents.pools.dummies.iter().next().unwrap().0) };
+        assert_eq!(w.epos(dummy), far);
+        // the player walks over: the scenery turns real again
+        w.ent_mut_for_test(w.ents.player_ped.unwrap()).base.set_position(Vec3::new(490.0, 0.0, 0.0));
+        w.manage_population(&mut px);
+        assert_eq!((w.ents.pools.dummies.used(), w.ents.pools.objects.used()), (0, 1));
+    }
+
+    #[test]
+    fn temp_objects_and_mission_objects_are_handled_by_their_origin() {
+        let (mut rng, mut hooks) = (Rng::default(), NoPedHooks);
+        let mut px = Px { rng: &mut rng, hooks: &mut hooks };
+        let mut w = box_world();
+        player_at_origin(&mut w, &mut px);
+        let temp_far = object_at(&mut w, &mut px, Vec3::new(500.0, 0.0, 0.0), CreatedBy::Temp);
+        let mission_far = object_at(&mut w, &mut px, Vec3::new(500.0, 10.0, 0.0), CreatedBy::Mission);
+        let temp_near = object_at(&mut w, &mut px, Vec3::new(10.0, 0.0, 0.0), CreatedBy::Temp);
+        if let Kind::Object(o) = &mut w.ent_mut_for_test(temp_near).kind {
+            o.end_of_life_time = 100;
+        }
+        w.ents.timer.time_in_ms = 5000;
+        w.manage_population(&mut px);
+        // a far temp object is dropped, a mission object stays as it is, an expired near temp object is dropped
+        assert!(w.get(temp_far).is_none() && w.get(mission_far).is_some() && w.get(temp_near).is_none());
+        assert_eq!(w.ents.pools.dummies.used(), 0);
+    }
+
+    #[test]
+    fn scenery_with_no_car_near_is_safe_to_turn_real() {
+        let (mut rng, mut hooks) = (Rng::default(), NoPedHooks);
+        let px = Px { rng: &mut rng, hooks: &mut hooks };
+        let mut w = box_world();
+        let d = w.new_dummy(10, px.rng).unwrap();
+        w.ent_mut_for_test(d).base.set_position(Vec3::new(30.0, 0.0, 0.0));
+        w.add(d).unwrap();
+        assert!(w.test_safe_for_real_object(d));
+    }
 }
