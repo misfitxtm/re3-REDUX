@@ -239,7 +239,7 @@ impl World {
     }
 
     /// `IsSphereTouchingVehicle`.
-    fn is_sphere_touching_vehicle(&self, veh: EntityRef, sphere: Vec3, radius: f32) -> bool {
+    pub(crate) fn is_sphere_touching_vehicle(&self, veh: EntityRef, sphere: Vec3, radius: f32) -> bool {
         match (self.get(veh), self.col_model_of(veh)) {
             (Some(e), Some(col)) => VehicleData::is_sphere_touching(&e.base.matrix, &col, sphere, radius),
             _ => false,

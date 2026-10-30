@@ -2,21 +2,34 @@
 use glam::Vec3;
 
 pub mod checks;
+mod cleanup;
 mod cmds_100;
 mod cmds_200;
-mod cmds_300;
+pub(crate) mod cmds_300;
+mod cmds_400;
+mod cmds_500;
+mod cmds_500b;
+mod cmds_600;
+mod cmds_700;
+mod cmds_800;
+mod cmds_900;
+mod cmds_1000;
+mod cmds_1100;
 mod locate;
 mod locate_table;
 pub mod commands;
 pub mod hooks;
+pub mod text;
 mod process;
 
-pub use hooks::ScriptHooks;
+pub use hooks::{ScriptHooks, ScriptStat};
 
 pub const SIZE_MAIN_SCRIPT: usize = 128 * 1024;
 pub const SIZE_MISSION_SCRIPT: usize = 32 * 1024;
 pub const SIZE_SCRIPT_SPACE: usize = SIZE_MAIN_SCRIPT + SIZE_MISSION_SCRIPT;
 pub const MAX_NUM_SCRIPTS: usize = 128;
+pub const MAX_NUM_SCRIPT_SPHERES: usize = 16;
+pub const MAX_NUM_INVISIBILITY_SETTINGS: usize = 20;
 pub const MAX_STACK_DEPTH: usize = 6;
 pub const NUM_LOCAL_VARS: usize = 16;
 pub const NUM_TIMERS: usize = 2;
@@ -191,9 +204,22 @@ pub enum Operand {
 }
 
 /// `CTheScripts` and the other statics of the script code.
+/// `tScriptSphere`: a marker the script has placed.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct ScriptSphere {
+    pub in_use: bool,
+    /// Bumped each time the slot is given out, so an old handle stops matching.
+    pub generation: u16,
+    pub id: u32,
+    pub centre: Vec3,
+    pub radius: f32,
+}
+
 #[derive(Debug, Clone)]
 pub struct Scripts {
     pub space: Vec<u8>,
+    /// The whole script file, kept for the missions that are read from it when they start.
+    pub file: Vec<u8>,
     pub scripts: Vec<RunningScript>,
     next: Vec<Option<usize>>,
     prev: Vec<Option<usize>>,
@@ -211,12 +237,25 @@ pub struct Scripts {
     pub main_script_size: u32,
     pub store_vehicle_index: i32,
     pub store_vehicle_was_random: bool,
+    pub last_random_ped_id: i32,
+    pub intro_text_lines: [text::IntroTextLine; text::MAX_NUM_INTRO_TEXT_LINES],
+    pub number_of_intro_text_lines_this_frame: usize,
+    pub use_text_commands: u8,
+    pub intro_rectangles: [text::IntroRectangle; text::MAX_NUM_INTRO_RECTANGLES],
+    pub number_of_intro_rectangles_this_frame: usize,
     pub base_brief_id_for_contact: [i32; MAX_NUM_CONTACTS],
     pub on_a_mission_for_contact_flag: [i32; MAX_NUM_CONTACTS],
     pub fail_current_mission: u8,
+    pub countdown_to_make_player_unsafe: u8,
+    pub delay_making_player_unsafe_this_time: u8,
     pub already_running_a_mission_script: bool,
     pub commands_executed: u16,
     pub scripts_updated: u16,
+    pub spheres: [ScriptSphere; MAX_NUM_SCRIPT_SPHERES],
+    /// `InvisibilitySettingArray`: the entities the script hid, shown again when the mission ends.
+    pub invisibility_settings: [Option<crate::entity::EntityRef>; MAX_NUM_INVISIBILITY_SETTINGS],
+    /// The last commands run (address, opcode), oldest first, 256 of them; a debugging aid for a script that stops.
+    pub recent_commands: std::collections::VecDeque<(u32, u16)>,
 }
 
 impl Default for Scripts {
@@ -224,6 +263,7 @@ impl Default for Scripts {
     fn default() -> Self {
         let mut s = Self {
             space: vec![0; SIZE_SCRIPT_SPACE],
+            file: vec![],
             scripts: vec![RunningScript::default(); MAX_NUM_SCRIPTS],
             next: vec![None; MAX_NUM_SCRIPTS],
             prev: vec![None; MAX_NUM_SCRIPTS],
@@ -239,12 +279,23 @@ impl Default for Scripts {
             main_script_size: 0,
             store_vehicle_index: -1,
             store_vehicle_was_random: true,
+            last_random_ped_id: -1,
+            intro_text_lines: Default::default(),
+            number_of_intro_text_lines_this_frame: 0,
+            use_text_commands: 0,
+            intro_rectangles: [text::IntroRectangle { texture_id: -1, ..Default::default() }; text::MAX_NUM_INTRO_RECTANGLES],
+            number_of_intro_rectangles_this_frame: 0,
             base_brief_id_for_contact: [0; MAX_NUM_CONTACTS],
             on_a_mission_for_contact_flag: [0; MAX_NUM_CONTACTS],
             fail_current_mission: 0,
+            countdown_to_make_player_unsafe: 0,
+            delay_making_player_unsafe_this_time: 1,
             already_running_a_mission_script: false,
             commands_executed: 0,
             scripts_updated: 0,
+            spheres: [ScriptSphere::default(); MAX_NUM_SCRIPT_SPHERES],
+            invisibility_settings: [None; MAX_NUM_INVISIBILITY_SETTINGS],
+            recent_commands: Default::default(),
         };
         for i in 0..MAX_NUM_SCRIPTS {
             s.add_to_list(i, false);
@@ -259,6 +310,7 @@ impl Scripts {
         let mut s = Self::default();
         let n = main_scm.len().min(SIZE_MAIN_SCRIPT);
         s.space[..n].copy_from_slice(&main_scm[..n]);
+        s.file = main_scm.to_vec();
         s.read_object_names_from_script();
         s.read_multi_script_file_offsets_from_script();
         s
@@ -467,6 +519,42 @@ impl Scripts {
     /// `IsPlayerOnAMission`.
     pub fn is_player_on_a_mission(&self) -> bool {
         self.on_a_mission_flag != 0 && self.global(self.on_a_mission_flag) == 1
+    }
+}
+
+impl Scripts {
+    /// `AddScriptSphere`: the handle of the new sphere, or -1 when all are used.
+    pub fn add_script_sphere(&mut self, id: u32, centre: Vec3, radius: f32) -> i32 {
+        let Some(i) = self.spheres.iter().position(|s| !s.in_use) else { return -1 };
+        let s = &mut self.spheres[i];
+        s.generation = if s.generation >= u16::MAX - 1 { 1 } else { s.generation + 1 };
+        (s.in_use, s.id, s.centre, s.radius) = (true, id, centre, radius);
+        (i as u16 as i32) | (s.generation as i32) << 16
+    }
+
+    /// `AddToInvisibilitySwapArray`: remembers an entity that was hidden, or forgets one that is shown again.
+    pub fn add_to_invisibility_swap_array(&mut self, entity: crate::entity::EntityRef, shown_again: bool) {
+        match self.invisibility_settings.iter().position(|e| *e == Some(entity)) {
+            Some(i) if shown_again => self.invisibility_settings[i] = None,
+            Some(_) => {}
+            None if !shown_again => {
+                if let Some(slot) = self.invisibility_settings.iter_mut().find(|e| e.is_none()) {
+                    *slot = Some(entity);
+                }
+            }
+            None => {}
+        }
+    }
+
+    /// `RemoveScriptSphere`: a stale or -1 handle does nothing.
+    pub fn remove_script_sphere(&mut self, handle: i32) {
+        if handle == -1 {
+            return;
+        }
+        let (generation, i) = ((handle as u32 >> 16) as u16, (handle & 0xFFFF) as usize);
+        if let Some(s) = self.spheres.get_mut(i).filter(|s| s.generation == generation) {
+            (s.in_use, s.id) = (false, 0);
+        }
     }
 }
 

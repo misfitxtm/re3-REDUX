@@ -11,8 +11,9 @@ impl World {
     /// `CreateCarGenerator`.
     #[allow(clippy::too_many_arguments)] // the script command's arguments
     pub fn create_car_generator(&mut self, pos: Vec3, angle: f32, model: i32, colour1: i16, colour2: i16, force: u8, alarm: u8, lock: u8, min_delay: u16, max_delay: u16) -> Option<usize> {
-        let col = self.ents.models.get(model)?.col_model.clone()?;
-        let g = CarGenerator::setup(pos, angle, model, colour1, colour2, force, alarm, lock, min_delay, max_delay, self.ents.timer.time_in_ms, col.bounding_box.min, col.bounding_box.max);
+        // a model without collision loaded yet gets an empty box rather than no generator
+        let (min, max) = self.ents.models.get(model).and_then(|m| m.col_model.as_ref()).map_or((Vec3::ZERO, Vec3::ZERO), |c| (c.bounding_box.min, c.bounding_box.max));
+        let g = CarGenerator::setup(pos, angle, model, colour1, colour2, force, alarm, lock, min_delay, max_delay, self.ents.timer.time_in_ms, min, max);
         self.ents.cargens.create(g)
     }
 

@@ -1,5 +1,5 @@
 //! `LocatePlayerCommand` and its relatives: is the player, a char or a car in the box around a point, or around another entity.
-use super::locate_table::SPECS;
+use super::locate_table::{AREA_SPECS, SPECS};
 use super::{RunningScript, ScriptHooks};
 use crate::anim::tables_gta3::anim;
 use crate::entity::{EntityRef, PoolKind};
@@ -31,6 +31,8 @@ pub enum Target {
     Char,
     Car,
     Object,
+    /// A box given by two corners, in any order.
+    Area,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -43,7 +45,7 @@ pub struct Spec {
 }
 
 pub fn spec_of(command: u16) -> Option<Spec> {
-    SPECS.iter().find(|(id, _)| *id == command).map(|(_, s)| *s)
+    SPECS.iter().chain(AREA_SPECS.iter()).find(|(id, _)| *id == command).map(|(_, s)| *s)
 }
 
 impl World {
@@ -81,6 +83,9 @@ impl World {
 
     /// One of the `LOCATE_*` commands.
     pub(crate) fn process_locate_command(&mut self, sh: &mut dyn ScriptHooks, s: &mut RunningScript, spec: Spec) {
+        if spec.target == Target::Area {
+            return self.process_area_command(sh, s, spec);
+        }
         let entity_target = spec.target != Target::Coords;
         let n = match (entity_target, spec.three_d) {
             (false, false) => 6,
@@ -90,20 +95,7 @@ impl World {
         };
         self.collect(s, n);
         // who is being asked about, and where they are
-        let (subject_ped, pos, stopped) = match spec.subject {
-            Subject::Player => {
-                let p = self.ents.player_ped.expect("LOCATE: no player");
-                (Some(p), self.player_info_pos(), self.is_player_stopped())
-            }
-            Subject::Char => {
-                let p = self.script_ped(self.sp(0)).expect("LOCATE: no such ped");
-                (Some(p), self.locate_position_of_ped(p), self.is_ped_stopped(p))
-            }
-            Subject::Car => {
-                let v = self.script_vehicle(self.sp(0)).expect("LOCATE: no such car");
-                (None, self.epos(v), self.is_vehicle_stopped(v))
-            }
-        };
+        let (subject_ped, pos, stopped) = self.locate_subject(spec.subject, self.sp(0));
         // the middle of the box and its half sizes
         let centre = if entity_target {
             match spec.target {
@@ -136,6 +128,48 @@ impl World {
         s.update_compare_flag(result);
         if debug != 0 {
             sh.highlight_important_area(s.ip, centre.x - d.x, centre.y - d.y, centre.x + d.x, centre.y + d.y, if spec.three_d { centre.z } else { MAP_Z_LOW_LIMIT });
+        }
+    }
+
+    /// The subject of a locate command: its ped (None for a car), where it is and whether it has stopped.
+    fn locate_subject(&self, subject: Subject, handle: i32) -> (Option<EntityRef>, Vec3, bool) {
+        match subject {
+            Subject::Player => {
+                let p = self.ents.player_ped.expect("LOCATE: no player");
+                (Some(p), self.player_info_pos(), self.is_player_stopped())
+            }
+            Subject::Char => {
+                let p = self.script_ped(handle).expect("LOCATE: no such ped");
+                (Some(p), self.locate_position_of_ped(p), self.is_ped_stopped(p))
+            }
+            Subject::Car => {
+                let v = self.script_vehicle(handle).expect("LOCATE: no such car");
+                (None, self.epos(v), self.is_vehicle_stopped(v))
+            }
+        }
+    }
+
+    /// `PlayerInAreaCheckCommand` and its char and car versions.
+    fn process_area_command(&mut self, sh: &mut dyn ScriptHooks, s: &mut RunningScript, spec: Spec) {
+        self.collect(s, if spec.three_d { 8 } else { 6 });
+        let (ped, pos, stopped) = self.locate_subject(spec.subject, self.sp(0));
+        let (a, b, debug) = if spec.three_d { (self.spv(1), self.spv(4), self.sp(7)) } else { (Vec3::new(self.spf(1), self.spf(2), 0.0), Vec3::new(self.spf(3), self.spf(4), 0.0), self.sp(5)) };
+        let (lo, hi) = (a.min(b), a.max(b));
+        let result = if spec.stopped && !stopped {
+            false
+        } else {
+            let inside = lo.x <= pos.x && hi.x >= pos.x && lo.y <= pos.y && hi.y >= pos.y && (!spec.three_d || lo.z <= pos.z && hi.z >= pos.z);
+            let in_vehicle = ped.is_some_and(|p| self.ped(p).in_vehicle);
+            inside
+                && match spec.mode {
+                    Mode::Any | Mode::None => true,
+                    Mode::OnFoot => !in_vehicle,
+                    Mode::InCar => in_vehicle,
+                }
+        };
+        s.update_compare_flag(result);
+        if debug != 0 {
+            sh.highlight_important_area(s.ip, lo.x, lo.y, hi.x, hi.y, if spec.three_d { (lo.z + hi.z) / 2.0 } else { MAP_Z_LOW_LIMIT });
         }
     }
 

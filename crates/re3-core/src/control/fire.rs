@@ -137,6 +137,50 @@ impl World {
         self.report_fire(px, pos);
     }
 
+    /// `CFireManager::StartScriptFire`: a fire the script keeps; the handle (a fire slot), or -1 when all are used.
+    pub fn start_script_fire(&mut self, px: &mut Px, pos: Vec3, target: Option<EntityRef>, strength: f32, propagation: bool) -> i32 {
+        if let Some(t) = target {
+            let burning = if self.is_ped(t) { self.ped(t).fire } else { self.try_veh(t).and_then(|v| v.car_fire) };
+            if let Some(f) = burning {
+                self.extinguish_fire_index(px, f);
+            }
+            if let Some(c) = self.car_mut(t).filter(|c| c.damage.engine_status >= 225) {
+                c.damage.engine_status = 215;
+            }
+        }
+        let Some(i) = self.ents.fires.next_free() else { return -1 };
+        let start_time = self.now() + 400;
+        self.ents.fires.fires[i] = Fire { is_ongoing: true, is_script_fire: true, propagation, audio_set: true, pos, start_time, entity: target, source: None, next_time_to_add_flames: 0, strength, ..Default::default() };
+        if let Some(t) = target {
+            if self.is_ped(t) {
+                self.ped_mut(t).fire = Some(i);
+                if self.ents.player_ped != Some(t) {
+                    self.set_flee_pos(t, glam::Vec2::new(pos.x, pos.y), 10000);
+                    self.set_move_anim(px, t);
+                    self.ped_mut(t).ped_state = state::ON_FIRE;
+                }
+            } else if let Some(v) = self.try_veh_mut(t) {
+                v.car_fire = Some(i);
+            }
+        }
+        i as i32
+    }
+
+    /// `CFireManager::RemoveScriptFire`.
+    pub fn remove_script_fire(&mut self, px: &mut Px, i: usize) {
+        self.extinguish_fire_index(px, i);
+        self.ents.fires.fires[i].is_script_fire = false;
+    }
+
+    /// `CFireManager::RemoveAllScriptFires`.
+    pub fn remove_all_script_fires(&mut self, px: &mut Px) {
+        for i in 0..NUM_FIRES {
+            if self.ents.fires.fires[i].is_script_fire {
+                self.remove_script_fire(px, i);
+            }
+        }
+    }
+
     /// `CFireManager::StartFire(entityOnFire, fleeFrom, strength, propagation)`: the new fire, if there was room and the entity could burn.
     pub fn start_fire_on(&mut self, px: &mut Px, target: EntityRef, flee_from: Option<EntityRef>, strength: f32, propagation: bool) -> Option<usize> {
         let now = self.now();

@@ -36,6 +36,7 @@ mod process;
 pub(crate) mod tests;
 
 pub use physics::WorldEvent;
+pub use process::WorldHooks;
 
 pub const MAP_Z_LOW_LIMIT: f32 = -100.0;
 
@@ -286,6 +287,7 @@ pub struct Ents {
     pub restart: crate::control::restart::Restart,
     pub zones: crate::zones::Zones,
     pub pickups: crate::control::pickups::Pickups,
+    pub pacman: crate::control::pacman::PacManPickups,
     pub garages: crate::control::garages::Garages,
     pub scripts: crate::script::Scripts,
     pub script_checks: crate::script::checks::ScriptChecks,
@@ -455,6 +457,7 @@ impl World {
                 restart: Default::default(),
                 zones: Default::default(),
                 pickups: Default::default(),
+                pacman: Default::default(),
                 garages: Default::default(),
                 scripts: Default::default(),
                 script_checks: Default::default(),
@@ -1179,6 +1182,28 @@ impl World {
         self.scan_box(min_s, max_s, kinds, |ents, r, _| {
             if ents.first_visit(r) {
                 out.push(r);
+            }
+            false
+        });
+        out
+    }
+
+    /// `FindObjectsIntersectingAngledCollisionBox`: entities whose bound sphere reaches a box that is turned by `matrix` and sits at `position`; the sectors searched are those of the x/y range given.
+    #[allow(clippy::too_many_arguments)] // the arguments of the original
+    pub fn find_objects_intersecting_angled_collision_box(&mut self, bbox: &crate::collision::Box3, matrix: &Matrix, position: Vec3, start: (f32, f32), end: (f32, f32), max: usize, kinds: Kinds) -> Vec<EntityRef> {
+        let g = self.grid;
+        let min_s = (g.index_x(start.0).max(0), g.index_y(start.1).max(0));
+        let max_s = (g.index_x(end.0).min(g.num - 1), g.index_y(end.1).min(g.num - 1));
+        self.advance_scan_code();
+        let mut out = vec![];
+        self.scan_box(min_s, max_s, kinds, |ents, r, _| {
+            if ents.first_visit(r)
+                && let Some(e) = ents.pools.get(r)
+            {
+                let sphere = crate::collision::Sphere::new(ents.bound_radius(e), matrix.rotate_vector_inverse(e.base.position() - position), 0, 0);
+                if crate::collision::test_sphere_box(&sphere, bbox) && out.len() < max {
+                    out.push(r);
+                }
             }
             false
         });

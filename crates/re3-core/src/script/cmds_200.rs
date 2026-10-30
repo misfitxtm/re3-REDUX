@@ -1,15 +1,80 @@
 //! `Script.cpp` commands 200 to 299 that stand on their own: AND/OR, tests of what the player and chars are in, score, wanted level and ammo.
 use super::commands as c;
 use super::{andor, RunningScript, ScriptHooks};
+use crate::entity::EntityRef;
 use crate::ped::ctx::Px;
 use crate::ped::data::state as ped_state;
 use crate::player_info::wb_state;
 use crate::world::World;
 
+const MAP_Z_LOW_LIMIT: f32 = -100.0;
+
 impl World {
     /// The player whose slot a script names; only slot 0 exists.
-    fn script_player(&self) -> crate::entity::EntityRef {
+    pub(crate) fn script_player(&self) -> crate::entity::EntityRef {
         self.ents.player_ped.expect("script needs a player")
+    }
+
+    /// The car a mission script has stored a handle of: the one before it is let go if the script made it a mission car.
+    fn store_car_in(&mut self, s: &RunningScript, car: EntityRef) {
+        use crate::vehicle::base::{MISSION_VEHICLE, PARKED_VEHICLE, PERMANENT_VEHICLE, RANDOM_VEHICLE};
+        let handle = car.handle;
+        if handle != self.ents.scripts.store_vehicle_index && s.is_mission_script {
+            if let Some(old) = self.script_vehicle(self.ents.scripts.store_vehicle_index) {
+                self.ents.car_ctrl.remove_from_interesting_vehicle_list(old);
+                if self.try_veh(old).is_some_and(|v| v.created_by == MISSION_VEHICLE) && self.ents.scripts.store_vehicle_was_random {
+                    let v = self.try_veh_mut(old).unwrap();
+                    v.created_by = RANDOM_VEHICLE;
+                    v.flags.is_locked = false;
+                    self.ents.car_ctrl.num_random_cars += 1;
+                    self.ents.car_ctrl.num_mission_cars -= 1;
+                    self.ents.scripts.cleanup.remove_entity_from_list(self.ents.scripts.store_vehicle_index, super::CLEANUP_CAR);
+                }
+            }
+            self.ents.scripts.store_vehicle_index = handle;
+            match self.try_veh(car).unwrap().created_by {
+                RANDOM_VEHICLE | PARKED_VEHICLE => {
+                    let was_random = self.try_veh(car).unwrap().created_by == RANDOM_VEHICLE;
+                    self.try_veh_mut(car).unwrap().created_by = MISSION_VEHICLE;
+                    let cc = &mut self.ents.car_ctrl;
+                    cc.num_mission_cars += 1;
+                    if was_random {
+                        cc.num_random_cars -= 1;
+                    } else {
+                        cc.num_parked_cars -= 1;
+                    }
+                    self.ents.scripts.store_vehicle_was_random = true;
+                    self.ents.scripts.cleanup.add_entity_to_list(handle, super::CLEANUP_CAR);
+                }
+                MISSION_VEHICLE | PERMANENT_VEHICLE => self.ents.scripts.store_vehicle_was_random = false,
+                _ => {}
+            }
+        }
+    }
+
+    /// `COMMAND_CREATE_OBJECT`: a model by number, or by its place in the script's own name table when negative.
+    fn script_create_object(&mut self, px: &mut Px, s: &mut RunningScript) {
+        let wanted = self.sp(0);
+        let model = if wanted >= 0 { wanted } else { self.ents.scripts.used_objects.get((-wanted) as usize).map_or(-1, |u| u.1) } as i16;
+        let Some(obj) = self.new_object(model, crate::math::Matrix::default(), px.rng) else { return };
+        if let Some(crate::entity::Kind::Object(o)) = self.get_mut(obj).map(|e| &mut e.kind) {
+            o.created_by = crate::entity::object::CreatedBy::Mission;
+        }
+        let mut pos = self.spv(1);
+        if pos.z <= -100.0 {
+            pos.z = self.find_ground_z_for_coord(pos.x, pos.y);
+        }
+        pos.z += self.base_offset_of(obj);
+        let e = self.get_mut(obj).unwrap();
+        e.base.set_position(pos);
+        e.base.set_orientation(0.0, 0.0, 0.0);
+        px.hooks.clear_space_for_mission_entity(pos, obj);
+        let _ = self.add(obj);
+        self.ents.scripts.params[0] = obj.handle;
+        self.store(s, 1);
+        if s.is_mission_script {
+            self.ents.scripts.cleanup.add_entity_to_list(obj.handle, super::CLEANUP_OBJECT);
+        }
     }
 
     /// `Some(car)` when the ped is in one.
@@ -34,6 +99,41 @@ impl World {
                     s.and_or_state += 1;
                 } else {
                     panic!("ANDOR: invalid state {st}");
+                }
+            }
+            c::MISSION_HAS_FINISHED => {
+                if s.is_mission_script {
+                    if s.name_str() == "love3" {
+                        self.remove_all_floating_pickups();
+                    }
+                    self.process_mission_cleanup(px, sh);
+                }
+            }
+            c::STORE_CAR_CHAR_IS_IN | c::STORE_CAR_PLAYER_IS_IN => {
+                self.collect(s, 1);
+                let ped = if command == c::STORE_CAR_PLAYER_IS_IN { self.script_player() } else { self.script_ped(self.sp(0)).expect("STORE_CAR_CHAR_IS_IN: no such ped") };
+                match self.car_of_ped(ped) {
+                    Some(car) => {
+                        self.store_car_in(s, car);
+                        self.ents.scripts.params[0] = self.ents.scripts.store_vehicle_index;
+                        self.store(s, 1);
+                    }
+                    // the player command writes nothing when the player is on foot
+                    None => assert!(command == c::STORE_CAR_PLAYER_IS_IN, "STORE_CAR_CHAR_IS_IN: the char is not in a car"),
+                }
+            }
+            c::CREATE_OBJECT => {
+                self.collect(s, 4);
+                self.script_create_object(px, s);
+            }
+            c::DELETE_OBJECT => {
+                self.collect(s, 1);
+                if let Some(o) = self.script_object(self.sp(0)) {
+                    self.remove_references_to(o);
+                    self.delete(o);
+                }
+                if s.is_mission_script {
+                    self.ents.scripts.cleanup.remove_entity_from_list(self.sp(0), super::CLEANUP_OBJECT);
                 }
             }
             c::LAUNCH_MISSION => {
@@ -180,9 +280,78 @@ impl World {
                 let ped = self.script_ped(self.sp(0)).expect("IS_CHAR_OBJECTIVE_PASSED: no such ped");
                 s.update_compare_flag(self.ped(ped).flags.script_objective_completed);
             }
+            c::GIVE_REMOTE_CONTROLLED_CAR_TO_PLAYER => {
+                self.collect(s, 5);
+                let mut pos = self.spv(1);
+                if pos.z <= MAP_Z_LOW_LIMIT {
+                    pos.z = self.find_ground_z_for_coord(pos.x, pos.y);
+                }
+                let heading = self.spf(4).to_radians();
+                self.give_player_remote_controlled_car(px, pos.x, pos.y, pos.z, heading, crate::modelinfo::indices_gta3::mi::RCBANDIT);
+            }
+            c::WARP_PLAYER_FROM_CAR_TO_COORD => {
+                self.collect(s, 4);
+                let player = self.script_player();
+                self.warp_ped_from_car_to_coord(px, player, self.spv(1), false);
+            }
+            c::CREATE_CHAR_INSIDE_CAR => {
+                self.collect(s, 3);
+                self.script_create_char_in_car(px, s, None);
+            }
             _ => panic!("script command {command} is not ported (script {}, at {})", s.name_str(), s.ip),
         }
         0
+    }
+
+    /// `CREATE_CHAR_INSIDE_CAR` (`seat` is `None`: the driver) and `CREATE_CHAR_AS_PASSENGER` (a seat, or any free one).
+    pub(crate) fn script_create_char_in_car(&mut self, px: &mut Px, s: &mut RunningScript, seat: Option<Option<u8>>) {
+        let car = self.script_vehicle(self.sp(0)).expect("CREATE_CHAR_IN_CAR: no such car");
+        let Some(ped) = self.script_new_ped(px, self.sp(1) as usize, self.sp(2)) else { return };
+        let pd = self.ped_mut(ped);
+        pd.char_created_by = crate::ped::data::MISSION_CHAR;
+        pd.flags.responds_to_threats = false;
+        pd.flags.allow_medics_to_revive_me = false;
+        pd.ped_state = crate::ped::data::state::DRIVING;
+        let at = self.epos(car);
+        let e = self.ent_mut(ped);
+        e.base.set_position(at);
+        e.base.set_orientation(0.0, 0.0, 0.0);
+        self.ents.population.total_mission_peds += 1;
+        match seat {
+            None => {
+                assert!(self.try_veh(car).unwrap().driver.is_none(), "CREATE_CHAR_INSIDE_CAR: the car has a driver");
+                self.vehicle_set_driver(car, ped);
+            }
+            Some(seat) => {
+                self.vehicle_add_passenger(car, ped, seat);
+            }
+        }
+        let pd = self.ped_mut(ped);
+        (pd.my_vehicle, pd.in_vehicle) = (Some(car), true);
+        self.ent_mut(car).base.status = crate::entity::status::PHYSICS;
+        let boat = self.ents.indices.is_boat_model(self.ent(car).base.model_index);
+        if seat.is_none() {
+            let v = self.try_veh_mut(car).unwrap();
+            if !boat {
+                v.auto_pilot.car_mission = crate::vehicle::base::car_mission::CRUISE;
+            }
+            v.flags.engine_on = true;
+        }
+        self.ent_mut(ped).base.flags.uses_collision = false;
+        let anim = self.driver_anim(car);
+        self.ped_blend_anim(ped, crate::anim::assoc_group::STD, anim, 100.0);
+        self.ped_mut(ped).vehicle_anim = Some(anim as i32);
+        self.stop_non_partial_anims(ped);
+        let level = self.ents.zones.get_level_from_position(at);
+        if let Some(p) = self.ent_mut(ped).phys.as_mut() {
+            p.zone_level = level as i8;
+        }
+        let _ = self.add(ped);
+        self.ents.scripts.params[0] = ped.handle;
+        self.store(s, 1);
+        if s.is_mission_script {
+            self.ents.scripts.cleanup.add_entity_to_list(ped.handle, super::CLEANUP_CHAR);
+        }
     }
 }
 
@@ -318,5 +487,89 @@ mod tests {
         assert_ne!(child, parent);
         assert!(w.ents.scripts.scripts[child].is_mission_script && w.ents.scripts.scripts[child].ip == m as u32);
         assert!(w.ents.scripts.scripts[parent].cond_result, "the player is inside the whole-city zone");
+    }
+
+    #[test]
+    fn the_car_a_mission_script_stores_becomes_a_mission_car_and_the_one_before_is_released() {
+        use crate::vehicle::base::{MISSION_VEHICLE, RANDOM_VEHICLE};
+        let mut a = Asm::new(2);
+        a.cmd(c::STORE_CAR_PLAYER_IS_IN, &[A::I8(0), A::G(8)]);
+        a.cmd(c::WAIT, &[A::I32(1)]);
+        a.cmd(c::STORE_CAR_PLAYER_IS_IN, &[A::I8(0), A::G(12)]);
+        a.cmd(c::WAIT, &[A::I32(100000)]);
+        let mut w = world_with_player(&a);
+        let mut rng = Rng::default();
+        let (first, second) = (w.new_car(LANDSTAL_MODEL, RANDOM_VEHICLE, &mut rng).unwrap(), w.new_car(LANDSTAL_MODEL, RANDOM_VEHICLE, &mut rng).unwrap());
+        w.ents.car_ctrl.num_random_cars = 2;
+        let p = w.ents.player_ped.unwrap();
+        let pd = w.ped_mut(p);
+        (pd.in_vehicle, pd.my_vehicle) = (true, Some(first));
+        let i = start(&mut w);
+        w.ents.scripts.scripts[i].is_mission_script = true;
+        run_frame(&mut w, &mut Spy);
+        assert_eq!((g(&w, 8), w.try_veh(first).unwrap().created_by, w.ents.car_ctrl.num_mission_cars, w.ents.car_ctrl.num_random_cars), (first.handle, MISSION_VEHICLE, 1, 1));
+        let pd = w.ped_mut(p);
+        pd.my_vehicle = Some(second);
+        w.ents.timer.time_in_ms = 10;
+        run_frame(&mut w, &mut Spy);
+        assert_eq!((g(&w, 12), w.try_veh(first).unwrap().created_by, w.try_veh(second).unwrap().created_by), (second.handle, RANDOM_VEHICLE, MISSION_VEHICLE));
+        assert_eq!(w.ents.scripts.cleanup.count, 1);
+    }
+
+    #[test]
+    fn objects_are_made_by_number_or_by_the_scripts_own_names_and_deleted() {
+        use crate::collision::{Box3, ColModel, Sphere};
+        let mut a = Asm::new(2);
+        a.cmd(c::CREATE_OBJECT, &[A::I16(3000), A::F(4.0), A::F(5.0), A::F(1.0), A::G(8)]);
+        a.cmd(c::WAIT, &[A::I32(1)]);
+        a.cmd(c::DELETE_OBJECT, &[A::G(8)]);
+        a.cmd(c::WAIT, &[A::I32(100000)]);
+        let mut w = world_with_player(&a);
+        let b = Box3 { min: Vec3::splat(-1.0), max: Vec3::splat(1.0), surface: 0, piece: 0 };
+        w.ents.models.add_simple_model(3000).unwrap().col_model = Some(std::sync::Arc::new(ColModel { bounding_sphere: Sphere::new(1.7, Vec3::ZERO, 0, 0), bounding_box: b, boxes: vec![b], ..Default::default() }));
+        let i = start(&mut w);
+        w.ents.scripts.scripts[i].is_mission_script = true;
+        run_frame(&mut w, &mut Spy);
+        let obj = crate::entity::EntityRef { pool: crate::entity::PoolKind::Object, handle: g(&w, 8) };
+        assert_eq!((w.epos(obj), w.ents.scripts.cleanup.count), (Vec3::new(4.0, 5.0, 2.0), 1), "its centre is a metre above where it stands");
+        assert!(matches!(&w.ent(obj).kind, crate::entity::Kind::Object(o) if o.created_by == crate::entity::object::CreatedBy::Mission));
+        w.ents.timer.time_in_ms = 10;
+        run_frame(&mut w, &mut Spy);
+        assert!(w.get(obj).is_none() && w.ents.scripts.cleanup.count == 0);
+    }
+
+    #[test]
+    fn a_finished_mission_cleans_up_after_itself() {
+        let mut a = Asm::new(2);
+        a.cmd(c::MISSION_HAS_FINISHED, &[]);
+        a.cmd(c::WAIT, &[A::I32(100000)]);
+        let mut w = world_with_player(&a);
+        w.ents.car_ctrl.car_density_multiplier = 4.0;
+        let i = start(&mut w);
+        w.ents.scripts.scripts[i].is_mission_script = true;
+        run_frame(&mut w, &mut Spy);
+        assert_eq!(w.ents.car_ctrl.car_density_multiplier, 1.0);
+    }
+
+    #[test]
+    fn a_char_made_inside_a_car_drives_it_and_one_made_as_a_passenger_takes_a_seat() {
+        let mut a = Asm::new(4);
+        a.cmd(c::CREATE_CHAR_INSIDE_CAR, &[A::G(8), A::I8(crate::ped::types::ped_type::CIVMALE as i8), A::I8(-1), A::G(12)]);
+        a.cmd(c::CREATE_CHAR_AS_PASSENGER, &[A::G(8), A::I8(crate::ped::types::ped_type::CIVMALE as i8), A::I8(-1), A::I8(-1), A::G(16)]);
+        a.cmd(c::WAIT, &[A::I32(100000)]);
+        let mut w = world_with_player(&a);
+        let car = w.new_car(crate::world::tests::LANDSTAL_MODEL, crate::vehicle::base::RANDOM_VEHICLE, &mut crate::general::Rng::default()).unwrap();
+        w.ents.scripts.set_global(8, car.handle);
+        start(&mut w);
+        run_frame(&mut w, &mut Spy);
+        let (driver, passenger) = (w.script_ped(g(&w, 12)).unwrap(), w.script_ped(g(&w, 16)).unwrap());
+        let v = w.try_veh(car).unwrap();
+        assert_eq!((v.driver, v.passengers[0], v.flags.engine_on), (Some(driver), Some(passenger), true));
+        assert_eq!(w.ent(car).base.status, crate::entity::status::PHYSICS);
+        for p in [driver, passenger] {
+            let pd = w.ped(p);
+            assert_eq!((pd.in_vehicle, pd.my_vehicle, pd.ped_state, pd.char_created_by), (true, Some(car), ped_state::DRIVING, crate::ped::data::MISSION_CHAR));
+        }
+        assert_eq!(w.ents.population.total_mission_peds, 2);
     }
 }

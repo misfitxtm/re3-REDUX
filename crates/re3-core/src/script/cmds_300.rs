@@ -436,7 +436,7 @@ impl World {
     }
 
     /// A global variable written where the command expects one: the type byte is skipped and its offset read.
-    fn read_global_var_offset(&mut self, s: &mut RunningScript) -> u32 {
+    pub(crate) fn read_global_var_offset(&mut self, s: &mut RunningScript) -> u32 {
         debug_assert_eq!(self.ents.scripts.space[s.ip as usize], super::arg::GLOBALVAR);
         s.ip += 1;
         self.ents.scripts.read2(&mut s.ip) as u16 as u32

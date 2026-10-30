@@ -319,6 +319,11 @@ impl World {
         p.iter().map(|(i, _)| EntityRef { pool: PoolKind::Vehicle, handle: p.handle_of(i) }).collect()
     }
 
+    pub(crate) fn object_refs(&self) -> Vec<EntityRef> {
+        let p = &self.ents.pools.objects;
+        p.iter().map(|(i, _)| EntityRef { pool: PoolKind::Object, handle: p.handle_of(i) }).collect()
+    }
+
     pub(crate) fn ped_refs(&self) -> Vec<EntityRef> {
         let p = &self.ents.pools.peds;
         p.iter().map(|(i, _)| EntityRef { pool: PoolKind::Ped, handle: p.handle_of(i) }).collect()

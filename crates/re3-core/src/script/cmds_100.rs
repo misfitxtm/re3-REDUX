@@ -30,7 +30,7 @@ impl World {
         self.get(r).map(|_| r)
     }
 
-    fn ent_mut(&mut self, r: EntityRef) -> &mut crate::entity::Ent {
+    pub(crate) fn ent_mut(&mut self, r: EntityRef) -> &mut crate::entity::Ent {
         self.get_mut(r).expect("live entity")
     }
 
@@ -329,28 +329,7 @@ impl World {
 
     /// `COMMAND_CREATE_CHAR`.
     fn script_create_char(&mut self, px: &mut Px, s: &mut RunningScript) {
-        use crate::modelinfo::indices_gta3::mi;
-        let (ty, mut model) = (self.sp(0) as usize, self.sp(1));
-        if ty == ped_type::COP {
-            model = match model as i16 {
-                mi::COP => crate::ped::cop::cop_type::STREET as i32,
-                mi::SWAT => crate::ped::cop::cop_type::SWAT as i32,
-                mi::FBI => crate::ped::cop::cop_type::FBI as i32,
-                mi::ARMY => crate::ped::cop::cop_type::ARMY as i32,
-                _ => model,
-            };
-        }
-        let ped = if ty == ped_type::COP {
-            let clump = px.hooks.load_ped_clump(crate::ped::population::cop_model(model as u8));
-            self.create_cop(px, model as u8, clump)
-        } else if ty == ped_type::EMERGENCY || ty == ped_type::FIREMAN {
-            let clump = px.hooks.load_ped_clump(if ty == ped_type::EMERGENCY { mi::MEDIC } else { mi::FIREMAN });
-            self.create_emergency(px, ty, clump)
-        } else {
-            let clump = px.hooks.load_ped_clump(model as i16);
-            self.create_civilian(px, ty, model as i16, clump)
-        };
-        let Some(ped) = ped else { return };
+        let Some(ped) = self.script_new_ped(px, self.sp(0) as usize, self.sp(1)) else { return };
         let pd = self.ped_mut(ped);
         pd.char_created_by = MISSION_CHAR;
         pd.flags.responds_to_threats = false;
@@ -371,6 +350,30 @@ impl World {
         self.store(s, 1);
         if s.is_mission_script {
             self.ents.scripts.cleanup.add_entity_to_list(ped.handle, super::CLEANUP_CHAR);
+        }
+    }
+
+    /// The ped a command asks for by type and model; for a cop the model names the kind of cop.
+    pub(crate) fn script_new_ped(&mut self, px: &mut Px, ty: usize, mut model: i32) -> Option<crate::entity::EntityRef> {
+        use crate::modelinfo::indices_gta3::mi;
+        if ty == ped_type::COP {
+            model = match model as i16 {
+                mi::COP => crate::ped::cop::cop_type::STREET as i32,
+                mi::SWAT => crate::ped::cop::cop_type::SWAT as i32,
+                mi::FBI => crate::ped::cop::cop_type::FBI as i32,
+                mi::ARMY => crate::ped::cop::cop_type::ARMY as i32,
+                _ => model,
+            };
+        }
+        if ty == ped_type::COP {
+            let clump = px.hooks.load_ped_clump(crate::ped::population::cop_model(model as u8));
+            self.create_cop(px, model as u8, clump)
+        } else if ty == ped_type::EMERGENCY || ty == ped_type::FIREMAN {
+            let clump = px.hooks.load_ped_clump(if ty == ped_type::EMERGENCY { mi::MEDIC } else { mi::FIREMAN });
+            self.create_emergency(px, ty, clump)
+        } else {
+            let clump = px.hooks.load_ped_clump(model as i16);
+            self.create_civilian(px, ty, model as i16, clump)
         }
     }
 

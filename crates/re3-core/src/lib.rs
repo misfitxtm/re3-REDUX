@@ -18,4 +18,6 @@ pub mod control;
 pub mod audio;
 pub mod clock;
 pub mod script;
+pub mod game_loop;
+pub mod loader;
 pub mod zones;

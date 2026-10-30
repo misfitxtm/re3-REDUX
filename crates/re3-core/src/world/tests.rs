@@ -5,7 +5,7 @@ use crate::entity::{Entity, EntityType, ObjectData};
 use crate::general::Rng;
 use crate::entity::physical::Physical;
 
-const BOX_MODEL: i16 = 10;
+pub(crate) const BOX_MODEL: i16 = 10;
 
 fn world() -> World {
     let mut models = ModelInfoStore::new(Game::Gta3);

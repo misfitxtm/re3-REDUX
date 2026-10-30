@@ -62,3 +62,29 @@ pub const SPECS: &[(u16, Spec)] = &[
     (c::LOCATE_CHAR_ON_FOOT_OBJECT_3D, Spec { stopped: false, subject: Subject::Char, mode: Mode::OnFoot, target: Target::Object, three_d: true }),
     (c::LOCATE_CHAR_IN_CAR_OBJECT_3D, Spec { stopped: false, subject: Subject::Char, mode: Mode::InCar, target: Target::Object, three_d: true }),
 ];
+
+/// The `IS_*_IN_AREA` commands that also look at whether the subject has stopped or is on foot or in a car.
+pub const AREA_SPECS: &[(u16, Spec)] = &[
+    (c::IS_PLAYER_IN_AREA_ON_FOOT_2D, Spec { stopped: false, subject: Subject::Player, mode: Mode::OnFoot, target: Target::Area, three_d: false }),
+    (c::IS_PLAYER_IN_AREA_IN_CAR_2D, Spec { stopped: false, subject: Subject::Player, mode: Mode::InCar, target: Target::Area, three_d: false }),
+    (c::IS_PLAYER_STOPPED_IN_AREA_2D, Spec { stopped: true, subject: Subject::Player, mode: Mode::Any, target: Target::Area, three_d: false }),
+    (c::IS_PLAYER_STOPPED_IN_AREA_ON_FOOT_2D, Spec { stopped: true, subject: Subject::Player, mode: Mode::OnFoot, target: Target::Area, three_d: false }),
+    (c::IS_PLAYER_STOPPED_IN_AREA_IN_CAR_2D, Spec { stopped: true, subject: Subject::Player, mode: Mode::InCar, target: Target::Area, three_d: false }),
+    (c::IS_PLAYER_IN_AREA_ON_FOOT_3D, Spec { stopped: false, subject: Subject::Player, mode: Mode::OnFoot, target: Target::Area, three_d: true }),
+    (c::IS_PLAYER_IN_AREA_IN_CAR_3D, Spec { stopped: false, subject: Subject::Player, mode: Mode::InCar, target: Target::Area, three_d: true }),
+    (c::IS_PLAYER_STOPPED_IN_AREA_3D, Spec { stopped: true, subject: Subject::Player, mode: Mode::Any, target: Target::Area, three_d: true }),
+    (c::IS_PLAYER_STOPPED_IN_AREA_ON_FOOT_3D, Spec { stopped: true, subject: Subject::Player, mode: Mode::OnFoot, target: Target::Area, three_d: true }),
+    (c::IS_PLAYER_STOPPED_IN_AREA_IN_CAR_3D, Spec { stopped: true, subject: Subject::Player, mode: Mode::InCar, target: Target::Area, three_d: true }),
+    (c::IS_CHAR_IN_AREA_ON_FOOT_2D, Spec { stopped: false, subject: Subject::Char, mode: Mode::OnFoot, target: Target::Area, three_d: false }),
+    (c::IS_CHAR_IN_AREA_IN_CAR_2D, Spec { stopped: false, subject: Subject::Char, mode: Mode::InCar, target: Target::Area, three_d: false }),
+    (c::IS_CHAR_STOPPED_IN_AREA_2D, Spec { stopped: true, subject: Subject::Char, mode: Mode::Any, target: Target::Area, three_d: false }),
+    (c::IS_CHAR_STOPPED_IN_AREA_ON_FOOT_2D, Spec { stopped: true, subject: Subject::Char, mode: Mode::OnFoot, target: Target::Area, three_d: false }),
+    (c::IS_CHAR_STOPPED_IN_AREA_IN_CAR_2D, Spec { stopped: true, subject: Subject::Char, mode: Mode::InCar, target: Target::Area, three_d: false }),
+    (c::IS_CHAR_IN_AREA_ON_FOOT_3D, Spec { stopped: false, subject: Subject::Char, mode: Mode::OnFoot, target: Target::Area, three_d: true }),
+    (c::IS_CHAR_IN_AREA_IN_CAR_3D, Spec { stopped: false, subject: Subject::Char, mode: Mode::InCar, target: Target::Area, three_d: true }),
+    (c::IS_CHAR_STOPPED_IN_AREA_3D, Spec { stopped: true, subject: Subject::Char, mode: Mode::Any, target: Target::Area, three_d: true }),
+    (c::IS_CHAR_STOPPED_IN_AREA_ON_FOOT_3D, Spec { stopped: true, subject: Subject::Char, mode: Mode::OnFoot, target: Target::Area, three_d: true }),
+    (c::IS_CHAR_STOPPED_IN_AREA_IN_CAR_3D, Spec { stopped: true, subject: Subject::Char, mode: Mode::InCar, target: Target::Area, three_d: true }),
+    (c::IS_CAR_STOPPED_IN_AREA_2D, Spec { stopped: true, subject: Subject::Car, mode: Mode::None, target: Target::Area, three_d: false }),
+    (c::IS_CAR_STOPPED_IN_AREA_3D, Spec { stopped: true, subject: Subject::Car, mode: Mode::None, target: Target::Area, three_d: true }),
+];

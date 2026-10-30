@@ -55,7 +55,25 @@ impl World {
         self.update_upside_down_timers();
         self.process_stuck_cars();
         let sc = &mut self.ents.scripts;
+        if sc.use_text_commands != 0 {
+            sc.intro_text_lines = Default::default();
+            sc.number_of_intro_text_lines_this_frame = 0;
+            for r in &mut sc.intro_rectangles {
+                r.used = false;
+                r.before_fade = false;
+            }
+            sc.number_of_intro_rectangles_this_frame = 0;
+            if sc.use_text_commands == 1 {
+                sc.use_text_commands = 0;
+            }
+        }
         sc.fail_current_mission = sc.fail_current_mission.saturating_sub(1);
+        if sc.countdown_to_make_player_unsafe != 0 {
+            sc.countdown_to_make_player_unsafe -= 1;
+            if sc.countdown_to_make_player_unsafe == 0 {
+                self.make_player_safe(px, false);
+            }
+        }
         let mut cur = self.ents.scripts.active;
         while let Some(i) = cur {
             let next = self.ents.scripts.next_of(i);
@@ -117,6 +135,11 @@ impl World {
         let raw = self.ents.scripts.read2(&mut s.ip) as u16;
         s.not_flag = raw & 0x8000 != 0;
         let command = raw & 0x7FFF;
+        let recent = &mut self.ents.scripts.recent_commands;
+        if recent.len() == 256 {
+            recent.pop_front();
+        }
+        recent.push_back((s.ip - 2, command));
         if let Some(spec) = super::locate::spec_of(command) {
             self.process_locate_command(sh, s, spec);
             return 0;
@@ -134,6 +157,14 @@ impl World {
             120..=199 => self.process_commands_100_to_199(px, sh, s, command),
             200..=299 => self.process_commands_200_to_299(px, sh, s, command),
             300..=399 => self.process_commands_300_to_399(px, sh, s, command),
+            400..=499 => self.process_commands_400_to_499(px, sh, s, command),
+            500..=599 => self.process_commands_500_to_599(px, sh, s, command),
+            600..=699 => self.process_commands_600_to_699(px, sh, s, command),
+            700..=799 => self.process_commands_700_to_799(px, sh, s, command),
+            800..=899 => self.process_commands_800_to_899(px, sh, s, command),
+            900..=999 => self.process_commands_900_to_999(px, sh, s, command),
+            1000..=1099 => self.process_commands_1000_to_1099(px, sh, s, command),
+            1100..=1199 => self.process_commands_1100_to_1199(px, sh, idx, s, command),
             _ => panic!("script command {command} is not ported (script {}, at {})", s.name_str(), s.ip),
         }
     }
